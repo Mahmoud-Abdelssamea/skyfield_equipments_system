@@ -482,7 +482,7 @@ html{scroll-behavior:smooth}
         <table class="log-table">
           <thead>
             <tr>
-              <th>رقم السجل</th><th>التاريخ</th><th>المستلم</th>
+              <th>رقم السجل</th><th>التاريخ</th><th>المُسلِّم</th><th>المستلم</th>
               <th>الأجهزة</th><th>وقت الاستلام</th><th>وقت التسليم</th>
               <th>الموقع</th><th>الحالة</th><th class="no-print">إجراءات</th>
             </tr>
@@ -949,6 +949,8 @@ const AR_TO_EN=Object.freeze({
   "رقم السجل":"Record number",
   "التاريخ":"Date",
   "المستلم":"Recipient",
+  "المُسلِّم":"Delivered by",
+  "اسم المُسلِّم":"Deliverer name",
   "الأجهزة":"Devices",
   "الموقع":"Location",
   "إجراءات":"Actions",
@@ -1078,6 +1080,7 @@ const AR_TO_EN=Object.freeze({
   "الرجاء اختيار جهاز واحد على الأقل":"Please select at least one device",
   "لا يمكن اختيار الجهاز نفسه أكثر من مرة":"The same device cannot be selected more than once",
   "يوجد جهاز غير متاح ضمن الاختيار":"The selection contains an unavailable device",
+  "الأجهزة المختارة مسجلة بالفعل باسم المستلم":"The selected devices are already assigned to this recipient",
   "جاري الحفظ في Supabase...":"Saving to Supabase...",
   "تم الحفظ محليًا وتعذر الاتصال بـ Supabase":"Saved locally; could not connect to Supabase",
   "تم حذف السجل":"Record deleted",
@@ -1301,6 +1304,7 @@ function localDeviceToDb(device) {
 function dbRecordToLocal(row) {
   return {
     id:row.record_no,date:row.movement_date,engineer:row.engineer,empid:row.empid||'',
+    deliveredBy:row.delivered_by||'',
     nat:row.nationality||'',phone:row.phone||'',location:row.location,
     status:row.movement_type,rtime:row.received_time||'',dtime:row.delivered_time||'',
     notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[]
@@ -1310,6 +1314,7 @@ function dbRecordToLocal(row) {
 function localRecordToDb(record) {
   return {
     record_no:record.id,movement_date:record.date,engineer:record.engineer,
+    delivered_by:getRecordDeliveredBy(record)||null,
     empid:record.empid||null,nationality:record.nat||null,phone:record.phone||null,
     location:record.location,movement_type:record.status,received_time:record.rtime||null,
     delivered_time:record.dtime||null,notes:record.notes||null,devices:record.devices||[],
@@ -1940,6 +1945,18 @@ function getSelectedDevices() {
   return devs;
 }
 
+function getRecordDeliveredBy(record) {
+  if(record?.deliveredBy) return record.deliveredBy;
+  const names = [...new Set((record?.devices||[])
+    .map(device=>device.previousHolder||device.holder||WAREHOUSE_HOLDER)
+    .filter(Boolean))];
+  return names.join('، ');
+}
+
+function prepareMovementDevices(devices) {
+  return devices.map(device=>({...device,previousHolder:device.holder||WAREHOUSE_HOLDER}));
+}
+
 // ── Record ID ─────────────────────────────────────────────────
 function updateRecId() {
   document.getElementById('f-recid').textContent = nextRecordId();
@@ -1963,16 +1980,18 @@ function saveRecord() {
   if(!requireEditPermission())return;
   const eng = document.getElementById('f-eng').value;
   if(!eng){toast('⚠️ الرجاء اختيار المستلم');return;}
-  const devs = getSelectedDevices();
+  let devs = getSelectedDevices();
   if(!devs.length){toast('⚠️ الرجاء اختيار جهاز واحد على الأقل');return;}
   if(new Set(devs.map(d=>d.id)).size !== devs.length){toast('⚠️ لا يمكن اختيار الجهاز نفسه أكثر من مرة');return;}
-  const isManager = eng === 'مدير المخزن (صالح)';
-  if(!isManager && devs.some(d=>d.status!=='متاح')){toast('⚠️ يوجد جهاز غير متاح ضمن الاختيار');return;}
+  if(devs.every(d=>(d.holder||WAREHOUSE_HOLDER)===eng)){toast('⚠️ الأجهزة المختارة مسجلة بالفعل باسم المستلم');return;}
+  devs = prepareMovementDevices(devs);
+  const deliveredBy = [...new Set(devs.map(d=>d.previousHolder).filter(Boolean))].join('، ');
 
   const rec = {
     id: nextRecordId(),
     date: getDate(),
     engineer: eng,
+    deliveredBy,
     empid: document.getElementById('f-empid').value,
     nat: document.getElementById('f-nat').value,
     phone: document.getElementById('f-phone').value,
@@ -2041,11 +2060,12 @@ function renderLog() {
   const filtered = RECORDS.filter(r=>
     r.id.toLowerCase().includes(q) ||
     r.engineer.toLowerCase().includes(q) ||
+    getRecordDeliveredBy(r).toLowerCase().includes(q) ||
     r.devices.some(d=>d.id&&d.id.toLowerCase().includes(q)||d.name&&d.name.toLowerCase().includes(q))
   );
   const tbody = document.getElementById('log-tbody');
   if(!filtered.length){
-    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--muted)">لا توجد سجلات${q?' تطابق البحث':''}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">لا توجد سجلات${q?' تطابق البحث':''}</td></tr>`;
     return;
   }
   tbody.innerHTML = filtered.map((r,idx)=>{
@@ -2054,6 +2074,7 @@ function renderLog() {
     return `<tr>
       <td class="rec-num">${r.id}</td>
       <td>${r.date}</td>
+      <td style="font-weight:500">${escapeHTML(getRecordDeliveredBy(r)||'—')}</td>
       <td style="font-weight:500">${r.engineer}</td>
       <td><div class="devices-cell">${devTags}</div></td>
       <td>${r.rtime||'—'}</td>
@@ -2162,6 +2183,7 @@ function deleteRecord() {
 
 // ── Print helpers ──────────────────────────────────────────────
 function buildPrintHTML(r) {
+  const deliveredBy = getRecordDeliveredBy(r)||'—';
   const devRows = r.devices.map(d=>`
     <tr>
       <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.id}</td>
@@ -2194,11 +2216,12 @@ function buildPrintHTML(r) {
     </div>
 
     <div style="margin-bottom:16px">
-      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">بيانات المستلم</div>
+      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">بيانات التسليم والاستلام</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">
-        <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">اسم المستلم</div><div style="font-size:14px;font-weight:600">${r.engineer}</div></div>
-        <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">الرقم الوظيفي</div><div style="font-size:14px;font-weight:600">${r.empid||'—'}</div></div>
-        <div style="padding:9px 12px;border-left:1px solid #ddd"><div style="font-size:10px;color:#999">موقع العمل</div><div style="font-size:14px;font-weight:600">${r.location}</div></div>
+        <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">اسم المُسلِّم</div><div style="font-size:14px;font-weight:600">${escapeHTML(deliveredBy)}</div></div>
+        <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">اسم المستلم</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.engineer)}</div></div>
+        <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">الرقم الوظيفي للمستلم</div><div style="font-size:14px;font-weight:600">${r.empid||'—'}</div></div>
+        <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">موقع العمل</div><div style="font-size:14px;font-weight:600">${r.location}</div></div>
         <div style="padding:9px 12px"><div style="font-size:10px;color:#999">الحالة</div><div style="font-size:14px;font-weight:600">${r.status}</div></div>
       </div>
     </div>
@@ -2231,12 +2254,12 @@ function buildPrintHTML(r) {
       <div style="text-align:center">
         <div style="border-top:2px solid #1A1A2E;padding-top:8px;font-size:12px;color:#555">توقيع المُسلِّم</div>
         <div style="height:50px"></div>
-        <div style="border-top:1px solid #ccc;padding-top:5px;font-size:11px;color:#999">الاسم والتاريخ</div>
+        <div style="border-top:1px solid #ccc;padding-top:5px;font-size:11px;color:#555">${escapeHTML(deliveredBy)} — الاسم والتاريخ</div>
       </div>
       <div style="text-align:center">
         <div style="border-top:2px solid #1A1A2E;padding-top:8px;font-size:12px;color:#555">توقيع المُستلِم</div>
         <div style="height:50px"></div>
-        <div style="border-top:1px solid #ccc;padding-top:5px;font-size:11px;color:#999">الاسم والتاريخ</div>
+        <div style="border-top:1px solid #ccc;padding-top:5px;font-size:11px;color:#555">${escapeHTML(r.engineer)} — الاسم والتاريخ</div>
       </div>
     </div>
     <div style="margin-top:20px;padding-top:10px;border-top:1px solid #eee;text-align:center;font-size:10px;color:#bbb">
@@ -2250,17 +2273,19 @@ function openPrintPreview() {
   const devs = getSelectedDevices();
   if(!eng){toast('⚠️ اختر المستلم أولاً');return;}
   if(!devs.length){toast('⚠️ اختر جهازاً واحداً على الأقل');return;}
+  const preparedDevs = prepareMovementDevices(devs);
   const tempRec = {
     id: document.getElementById('f-recid').textContent,
     date: getDate(),
     engineer: eng,
+    deliveredBy: [...new Set(preparedDevs.map(d=>d.previousHolder).filter(Boolean))].join('، '),
     empid: document.getElementById('f-empid').value,
     location: document.getElementById('f-loc').value,
     status: document.getElementById('f-status').value,
     rtime: document.getElementById('f-rtime').value,
     dtime: document.getElementById('f-dtime').value,
     notes: document.getElementById('f-notes').value,
-    devices: devs
+    devices: preparedDevs
   };
   document.getElementById('print-content').innerHTML = buildPrintHTML(tempRec);
   document.getElementById('print-modal').classList.add('open');
@@ -2302,12 +2327,12 @@ function buildWorkbook() {
   const wb = XLSX.utils.book_new();
 
   // Log sheet
-  const logData = [["رقم السجل","التاريخ","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","وقت الاستلام","وقت التسليم","الموقع","الحالة","ملاحظات"]];
+  const logData = [["رقم السجل","التاريخ","المُسلِّم","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","وقت الاستلام","وقت التسليم","الموقع","الحالة","ملاحظات"]];
   RECORDS.forEach(r=>{
-    logData.push([r.id,r.date,r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rtime||'',r.dtime||'',r.location,r.status,r.notes||'']);
+    logData.push([r.id,r.date,getRecordDeliveredBy(r),r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rtime||'',r.dtime||'',r.location,r.status,r.notes||'']);
   });
   const ws1 = XLSX.utils.aoa_to_sheet(logData);
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:12},{wch:12},{wch:16},{wch:12},{wch:24}];
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:12},{wch:12},{wch:16},{wch:12},{wch:24}];
   XLSX.utils.book_append_sheet(wb,ws1,"سجل الاستلام");
 
   // Inventory sheet
