@@ -852,8 +852,10 @@ html{scroll-behavior:smooth}
 // ── Supabase configuration & data access ─────────────────────
 const SB_URL_KEY = 'sf_supabase_url';
 const SB_ANON_KEY_KEY = 'sf_supabase_anon_key';
-let SUPABASE_URL = localStorage.getItem(SB_URL_KEY) || '';
-let SUPABASE_ANON_KEY = localStorage.getItem(SB_ANON_KEY_KEY) || '';
+const DEFAULT_SUPABASE_URL = 'https://kfaytvoihwzfwxmlkkwn.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_6K5pRY2sxSpNxYQ7_DjW2Q_WKa2Qh9s';
+let SUPABASE_URL = localStorage.getItem(SB_URL_KEY) || DEFAULT_SUPABASE_URL;
+let SUPABASE_ANON_KEY = localStorage.getItem(SB_ANON_KEY_KEY) || DEFAULT_SUPABASE_ANON_KEY;
 let sbClient = null;
 let authSubscription = null;
 let CURRENT_ROLE = 'viewer';
