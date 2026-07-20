@@ -18,6 +18,16 @@
   --teal:#D1ECF1;--teal-t:#0c5460;
 }
 body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f8;color:var(--text);min-height:100vh;direction:rtl}
+html[dir="ltr"] body{direction:ltr;text-align:left}
+html[dir="ltr"] input,html[dir="ltr"] select,html[dir="ltr"] textarea{direction:ltr;text-align:left}
+html[dir="ltr"] input[dir="ltr"],html[dir="ltr"] textarea[dir="ltr"]{direction:ltr}
+html[dir="ltr"] .device-table th,html[dir="ltr"] .log-table th,html[dir="ltr"] .inv-table th{text-align:left}
+html[dir="ltr"] .login-field{text-align:left}
+html[dir="ltr"] .cal-date{text-align:left}
+html[dir="ltr"] .section-subtitle{margin-right:0;margin-left:4px}
+html[dir="ltr"] .card-header>.btn[style*="margin-right:auto"]{margin-right:0!important;margin-left:auto!important}
+.lang-switch{border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.12);color:#fff;border-radius:20px;padding:5px 11px;cursor:pointer;font:600 11px inherit;white-space:nowrap}
+.login-language{position:absolute;top:14px;left:14px;background:var(--light);border-color:var(--border);color:var(--accent)}
 .app-header{background:var(--dark);color:#fff;padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.3)}
 .app-header h1{font-size:16px;font-weight:600;letter-spacing:.3px}
 .app-header .badge{background:var(--gold);color:#fff;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600}
@@ -147,7 +157,7 @@ select{cursor:pointer}
 #login-screen.hidden{display:none;}
 .login-box{
   background:#fff;border-radius:20px;padding:48px 40px;width:100%;max-width:400px;
-  box-shadow:0 24px 60px rgba(0,0,0,0.4);text-align:center;
+  box-shadow:0 24px 60px rgba(0,0,0,0.4);text-align:center;position:relative;
 }
 .login-logo{font-size:48px;margin-bottom:8px;}
 .login-title{font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:4px;}
@@ -265,6 +275,7 @@ html{scroll-behavior:smooth}
 <!-- ═══════════ LOGIN SCREEN ═══════════ -->
 <div id="login-screen">
   <div class="login-box">
+    <button class="lang-switch login-language" data-language-control onclick="toggleLanguage()">English</button>
     <div class="login-logo">📦</div>
     <div class="login-title">نظام متابعة الأجهزة</div>
     <div class="login-sub">Sky Field — تسجيل الدخول</div>
@@ -293,6 +304,7 @@ html{scroll-behavior:smooth}
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
+    <button class="lang-switch" data-language-control onclick="toggleLanguage()">English</button>
     <span id="sync-badge" style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;background:#FFF3CD;color:#856404">غير متصل</span>
     <button onclick="syncFromCloud().then(ok=>{if(ok){updateRecId();renderInventory();renderLog();}})" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🔄 مزامنة</button>
     <button onclick="openSupabaseSettings()" style="background:#E94560;border:none;color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">⚙️ Supabase</button>
@@ -858,6 +870,383 @@ html{scroll-behavior:smooth}
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Arabic / English interface ────────────────────────────────
+const LANGUAGE_KEY='sf_language';
+let CURRENT_LANG=localStorage.getItem(LANGUAGE_KEY)==='en'?'en':'ar';
+const AR_TO_EN=Object.freeze({
+  "نظام متابعة الأجهزة":"Equipment Tracking System",
+  "Sky Field — تسجيل الدخول":"Sky Field — Sign in",
+  "البريد الإلكتروني":"Email address",
+  "كلمة المرور":"Password",
+  "دخول":"Sign in",
+  "إعداد اتصال Supabase":"Supabase connection settings",
+  "نظام إدارة ومتابعة أجهزة الاختبار":"Test Equipment Management and Tracking System",
+  "غير متصل":"Offline",
+  "مزامنة":"Sync",
+  "تسجيل الخروج":"Sign out",
+  "خروج":"Sign out",
+  "لوحة المتابعة":"Dashboard",
+  "حركة جهاز":"Device movement",
+  "سجل الاستلام":"Movement log",
+  "المخزون":"Inventory",
+  "المعايرة":"Calibration",
+  "إدارة الأجهزة":"Device management",
+  "الإعدادات":"Settings",
+  "لوحة متابعة الأجهزة":"Equipment dashboard",
+  "صورة فورية لحالة المخزون والمعايرة وحركة الأجهزة.":"Live overview of inventory, calibration, and equipment movements.",
+  "إجمالي الأجهزة":"Total devices",
+  "جميع الأجهزة المسجلة":"All registered devices",
+  "متاحة":"Available",
+  "جاهزة للتخصيص":"Ready for assignment",
+  "في المواقع":"Off-site",
+  "بعهدة مهندس أو مشروع":"Assigned to an engineer or project",
+  "معايرة قريبة":"Calibration due soon",
+  "خلال 60 يومًا":"Within 60 days",
+  "معايرة منتهية":"Expired calibration",
+  "تحتاج إجراء فوري":"Immediate action required",
+  "تنبيهات المعايرة":"Calibration alerts",
+  "الأقرب أولًا":"Nearest due date first",
+  "إجراءات سريعة":"Quick actions",
+  "تسجيل حركة جهاز":"Record device movement",
+  "استلام أو تسليم جهاز":"Assign or return a device",
+  "مراجعة المعايرة":"Review calibration",
+  "الشهادات والتنبيهات":"Certificates and alerts",
+  "تصدير البيانات":"Export data",
+  "نسخة Excel شاملة":"Complete Excel workbook",
+  "حالة النموذج":"Form status",
+  "جديد":"New",
+  "رقم السجل التلقائي":"Automatic record number",
+  "بيانات المستلم":"Recipient details",
+  "اسم المستلم":"Recipient name",
+  "اختر من القائمة — البيانات تُجلب تلقائياً":"Choose from the list — details are filled automatically",
+  "الرقم الوظيفي":"Employee ID",
+  "الجنسية":"Nationality",
+  "رقم التليفون":"Phone number",
+  "موقع العمل":"Work location",
+  "الحالة":"Status",
+  "استلام":"Assignment",
+  "تسليم":"Return",
+  "وقت الاستلام":"Assignment time",
+  "وقت التسليم":"Return time",
+  "الأجهزة المُستلَمة":"Assigned devices",
+  "رقم الجهاز":"Device ID",
+  "اسم الجهاز":"Device name",
+  "النوع":"Type",
+  "الرقم التسلسلي":"Serial number",
+  "المواصفات":"Specifications",
+  "إضافة جهاز":"Add device",
+  "+ إضافة جهاز":"+ Add device",
+  "− حذف آخر صف":"− Remove last row",
+  "ملاحظات":"Notes",
+  "أي ملاحظات إضافية...":"Any additional notes...",
+  "مسح النموذج":"Clear form",
+  "معاينة وطباعة":"Preview and print",
+  "حفظ السجل":"Save record",
+  "سجل الاستلام والتسليم":"Assignment and return log",
+  "تصدير Excel":"Export Excel",
+  "بحث برقم السجل أو المستلم أو الجهاز...":"Search by record, recipient, or device...",
+  "مسح":"Clear",
+  "رقم السجل":"Record number",
+  "التاريخ":"Date",
+  "المستلم":"Recipient",
+  "الأجهزة":"Devices",
+  "الموقع":"Location",
+  "إجراءات":"Actions",
+  "المخزون — الحالة الراهنة":"Inventory — current status",
+  "المستلم الحالي":"Current holder",
+  "مركز المعايرة والشهادات":"Calibration and certificate center",
+  "تنبيه قبل 60 / 30 / 7 أيام":"Alerts at 60 / 30 / 7 days",
+  "بحث برقم الجهاز أو الاسم أو الرقم التسلسلي...":"Search by device ID, name, or serial number...",
+  "كل حالات المعايرة":"All calibration statuses",
+  "منتهية":"Expired",
+  "خلال 7 أيام":"Within 7 days",
+  "خلال 30 يومًا":"Within 30 days",
+  "سارية":"Valid",
+  "بيانات ناقصة":"Missing data",
+  "لا تتطلب معايرة":"Calibration not required",
+  "قالب المواصفات والمعايرة":"Specifications and calibration template",
+  "استيراد التحديثات":"Import updates",
+  "صلاحيتك الحالية: مشاهدة فقط.":"Your current permission is view-only.",
+  "لتعديل الأجهزة أو بيانات المعايرة يجب أن يكون دور الحساب":"To edit devices or calibration data, the account role must be",
+  "الجهاز":"Device",
+  "آخر معايرة":"Last calibration",
+  "تاريخ الانتهاء":"Expiry date",
+  "المعمل / المورد":"Calibration lab / supplier",
+  "الشهادة":"Certificate",
+  "إجراء":"Action",
+  "7 أيام":"7 days",
+  "30 يومًا":"30 days",
+  "60 يومًا":"60 days",
+  "إضافة جهاز جديد":"Add new device",
+  "نفّذ ملف تفعيل المدير، ثم سجّل الخروج والدخول لإظهار أزرار الإضافة والتعديل.":"Run the admin activation script, then sign out and back in to show add and edit controls.",
+  "بحث برقم الجهاز أو الاسم أو التسلسل...":"Search by device ID, name, or serial...",
+  "كل حالات الأجهزة":"All device statuses",
+  "متاح":"Available",
+  "غير متاح":"Unavailable",
+  "في موقع / بعهدة":"Off-site / assigned",
+  "محجوز":"Reserved",
+  "تحت الصيانة":"Under maintenance",
+  "خارج الخدمة":"Out of service",
+  "العهدة":"Custodian",
+  "حالة الجهاز":"Device status",
+  "إدخال جهاز جديد للمخزون":"Add a new device to inventory",
+  "الماركة / الموديل":"Brand / model",
+  "إضافة نوع جديد":"Add a new type",
+  "بيانات المعايرة وشهادة الجهاز":"Device calibration and certificate",
+  "هذا الجهاز يتطلب معايرة دورية":"This device requires periodic calibration",
+  "رقم شهادة المعايرة":"Calibration certificate number",
+  "تاريخ آخر معايرة":"Last calibration date",
+  "تاريخ انتهاء المعايرة":"Calibration expiry date",
+  "معمل / مورد المعايرة":"Calibration lab / supplier",
+  "اسم المعمل أو الشركة":"Lab or company name",
+  "رفع شهادة المعايرة (PDF أو صورة)":"Upload calibration certificate (PDF or image)",
+  "لا توجد شهادة محفوظة":"No certificate saved",
+  "ملاحظات الجهاز":"Device notes",
+  "الحالة الفنية، الملحقات، أو أي ملاحظات أخرى...":"Technical condition, accessories, or other notes...",
+  "إلغاء":"Cancel",
+  "حفظ الجهاز":"Save device",
+  "تصدير المستلمين والمواقع إلى Excel":"Export recipients and locations to Excel",
+  "إدارة المستلمين":"Recipient management",
+  "إضافة مستلم":"Add recipient",
+  "الاسم":"Name",
+  "رقم الإقامة":"Residency ID",
+  "التليفون":"Phone",
+  "إدارة مواقع العمل":"Work location management",
+  "اسم الموقع الجديد...":"New location name...",
+  "إضافة موقع":"Add location",
+  "الاسم الكامل":"Full name",
+  "رقم الإقامة / الهوية":"Residency / national ID",
+  "حفظ":"Save",
+  "تعديل السجل —":"Edit record —",
+  "الأجهزة:":"Devices:",
+  "حذف السجل":"Delete record",
+  "حفظ التعديل":"Save changes",
+  "أدخل Project URL وPublishable/Anon Key من صفحة API Settings في مشروع Supabase. المفتاح المسموح هنا هو المفتاح العام فقط؛ لا تضع Service Role Key داخل ملف HTML.":"Enter the Project URL and Publishable/Anon Key from the API Settings page in Supabase. Only the public key is allowed here; never place a Service Role Key in the HTML file.",
+  "اختبار الاتصال":"Test connection",
+  "حفظ الاتصال":"Save connection",
+  "معاينة نموذج الاستلام":"Movement form preview",
+  "إغلاق":"Close",
+  "طباعة":"Print",
+  "ابحث باسم المستلم...":"Search recipient name...",
+  "— اختر —":"— Select —",
+  "مثال: JHZ-011":"Example: JHZ-011",
+  "مثال: آيفون 15 برو":"Example: iPhone 15 Pro",
+  "مثال: آبل / iPhone 15 Pro":"Example: Apple / iPhone 15 Pro",
+  "مثال: SN123456":"Example: SN123456",
+  "مثال: 0–800A، الدقة 0.2%، 50/60Hz":"Example: 0–800A, accuracy 0.2%, 50/60Hz",
+  "مثال: CAL-2026-001":"Example: CAL-2026-001",
+  "مثال: سعودي":"Example: Saudi",
+  "مثال: 260311":"Example: 260311",
+  "غير مطلوبة":"Not required",
+  "عرض الشهادة ↗":"View certificate ↗",
+  "تحديث":"Update",
+  "لا توجد تنبيهات معايرة حاليًا":"No calibration alerts at this time",
+  "أكمل البيانات":"Complete the data",
+  "بدون رقم تسلسلي":"No serial number",
+  "لا توجد أجهزة مطابقة للتصفية":"No devices match the filter",
+  "لا توجد أجهزة مطابقة":"No matching devices",
+  "المستودع":"Warehouse",
+  "مدير":"Admin",
+  "أمين مخزن":"Storekeeper",
+  "مشاهدة":"Viewer",
+  "تم الاستلام":"Assigned",
+  "تم التسليم":"Returned",
+  "قيد الاستخدام":"In use",
+  "مُعاد":"Returned",
+  "مباع":"Sold",
+  "Supabase غير معدّ":"Supabase not configured",
+  "يلزم تسجيل الدخول":"Sign-in required",
+  "جاري المزامنة...":"Syncing...",
+  "تم نقل البيانات الحالية إلى Supabase":"Current data migrated to Supabase",
+  "✓ متزامن مع Supabase":"✓ Synced with Supabase",
+  "فشل المزامنة":"Sync failed",
+  "جاري الحفظ...":"Saving...",
+  "✓ محفوظ في Supabase":"✓ Saved in Supabase",
+  "خطأ في الحفظ":"Save error",
+  "تعذر الحذف من Supabase":"Could not delete from Supabase",
+  "أدخل الرابط والمفتاح أولًا":"Enter the URL and key first",
+  "جاري اختبار الاتصال...":"Testing connection...",
+  "✓ الاتصال بمشروع Supabase ناجح":"✓ Supabase connection successful",
+  "تحقق من رابط Supabase والمفتاح":"Check the Supabase URL and key",
+  "تم حفظ اتصال Supabase":"Supabase connection saved",
+  "تعذر العثور على الجهاز":"Device not found",
+  "تم تصدير تقرير المعايرة":"Calibration report exported",
+  "تم تنزيل قالب المواصفات والمعايرة":"Specifications and calibration template downloaded",
+  "لم يتم العثور على أجهزة صالحة للتحديث":"No valid devices found for update",
+  "يجب وجود جهاز واحد على الأقل":"At least one device is required",
+  "الرجاء اختيار المستلم":"Please select a recipient",
+  "الرجاء اختيار جهاز واحد على الأقل":"Please select at least one device",
+  "لا يمكن اختيار الجهاز نفسه أكثر من مرة":"The same device cannot be selected more than once",
+  "يوجد جهاز غير متاح ضمن الاختيار":"The selection contains an unavailable device",
+  "جاري الحفظ في Supabase...":"Saving to Supabase...",
+  "تم الحفظ محليًا وتعذر الاتصال بـ Supabase":"Saved locally; could not connect to Supabase",
+  "تم حذف السجل":"Record deleted",
+  "اختر المستلم أولاً":"Select the recipient first",
+  "اختر جهازاً واحداً على الأقل":"Select at least one device",
+  "لا توجد بيانات للتصدير":"No data to export",
+  "تم تصدير ملف Excel":"Excel file exported",
+  "تم تصدير بيانات المستلمين والمواقع":"Recipient and location data exported",
+  "— اختر المهندس —":"— Select engineer —",
+  "الاسم مطلوب":"Name is required",
+  "المستلم موجود مسبقاً":"Recipient already exists",
+  "لا يمكن حذف مدير المخزن الافتراضي":"The default warehouse manager cannot be deleted",
+  "أدخل اسم الموقع":"Enter a location name",
+  "الموقع موجود مسبقاً":"Location already exists",
+  "لا يمكن حذف المواقع الافتراضية":"Default locations cannot be deleted",
+  "اضبط اتصال Supabase أولًا":"Configure Supabase first",
+  "أدخل البريد الإلكتروني وكلمة المرور":"Enter the email address and password",
+  "جاري تسجيل الدخول...":"Signing in...",
+  "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
+  "تم تسجيل الدخول":"Signed in successfully",
+  "اضبط اتصال Supabase للبدء":"Configure Supabase to begin",
+  "النوع موجود مسبقاً":"Type already exists",
+  "رقم غير صحيح":"Invalid number",
+  "لا يمكن حذف الأنواع الافتراضية":"Default types cannot be deleted",
+  "لا توجد نتائج":"No results",
+  "لا توجد أجهزة":"No devices",
+  "رقم الجهاز مطلوب":"Device ID is required",
+  "اسم الجهاز مطلوب":"Device name is required",
+  "تاريخ انتهاء المعايرة يجب أن يكون بعد تاريخ المعايرة":"Calibration expiry date must be after the calibration date",
+  "جاري رفع شهادة المعايرة...":"Uploading calibration certificate...",
+  "رقم الجهاز موجود مسبقاً":"Device ID already exists",
+  "تم الحفظ محليًا، لكن تعذر الحفظ في Supabase":"Saved locally, but could not save to Supabase",
+  "لا يمكن حذف جهاز عند مستخدم":"A device assigned to a user cannot be deleted",
+  "أدخل اسم النوع الجديد:":"Enter the new type name:",
+  "ابحث عن جهاز...":"Search for a device...",
+  "أو":"or",
+  "لا توجد سجلات":"No records",
+  "مدير المخزن (صالح)":"Warehouse Manager (Saleh)",
+  "sb_publishable_... أو eyJ...":"sb_publishable_... or eyJ..."
+});
+const I18N_TEXT_SOURCES=new WeakMap();
+const I18N_ATTR_SOURCES=new WeakMap();
+let I18N_RUNNING=false;
+
+function uiLocale(){return CURRENT_LANG==='en'?'en-GB':'ar-SA';}
+
+function translateRuntimeText(value){
+  const source=String(value??'');
+  if(CURRENT_LANG!=='en')return source;
+  const icon=source.match(/^([✅⚠️⏳🗑📥📤📄💾🔒⚙️➕✏️🖨🔄🧪📦📊📍👷🔧📝⚡🔍]+\uFE0F?\s*)/u);
+  const prefix=icon?.[1]||'';
+  const text=prefix?source.slice(prefix.length):source;
+  if(AR_TO_EN[text])return prefix+AR_TO_EN[text];
+  const rules=[
+    [/^(\d+) سجل$/,(_,n)=>`${n} records`],
+    [/^(\d+) جهاز$/,(_,n)=>`${n} devices`],
+    [/^(\d+) يوم$/,(_,n)=>`${n} days`],
+    [/^متبقي (\d+) يوم$/,(_,n)=>`${n} days remaining`],
+    [/^منتهية منذ (\d+) يوم$/,(_,n)=>`Expired ${n} days ago`],
+    [/^تم حفظ السجل (.+) في Supabase$/,(_,id)=>`Record ${id} saved to Supabase`],
+    [/^تم حفظ التعديلات على (.+)$/,(_,id)=>`Changes saved for ${id}`],
+    [/^تم تعديل الجهاز (.+)$/,(_,id)=>`Device ${id} updated`],
+    [/^تم إضافة الجهاز (.+)$/,(_,id)=>`Device ${id} added`],
+    [/^تم حذف الجهاز (.+)$/,(_,id)=>`Device ${id} deleted`],
+    [/^تم تحديث (\d+) جهاز(.*)$/,(_,n,rest)=>`${n} devices updated${rest||''}`],
+    [/^تم تصحيح موقع (\d+) جهاز محليًا، وتعذر حفظ التصحيح في Supabase$/,(_,n)=>`${n} device locations corrected locally; Supabase update failed`],
+    [/^تم تصحيح موقع (\d+) جهاز خارج المستودع$/,(_,n)=>`${n} off-site device locations corrected`],
+    [/^فشل الاتصال: (.+)$/,(_,error)=>`Connection failed: ${error}`],
+    [/^تعذر فتح الشهادة: (.+)$/,(_,error)=>`Could not open certificate: ${error}`],
+    [/^تعذر قراءة ملف التحديث: (.+)$/,(_,error)=>`Could not read update file: ${error}`],
+    [/^تم تعديل بيانات (.+)$/,(_,name)=>`Recipient ${name} updated`],
+    [/^تم إضافة المستلم (.+)$/,(_,name)=>`Recipient ${name} added`],
+    [/^تم حذف المستلم (.+)$/,(_,name)=>`Recipient ${name} deleted`],
+    [/^تم إضافة الموقع: (.+)$/,(_,name)=>`Location ${name} added`],
+    [/^تم حذف الموقع: (.+)$/,(_,name)=>`Location ${name} deleted`],
+    [/^تم إضافة النوع: (.+)$/,(_,name)=>`Type ${name} added`],
+    [/^تم حذف النوع: (.+)$/,(_,name)=>`Type ${name} deleted`],
+    [/^هل أنت متأكد من حذف السجل (.+)؟$/,(_,id)=>`Are you sure you want to delete record ${id}?`],
+    [/^هل أنت متأكد من حذف الجهاز (.+)\?$/,(_,id)=>`Are you sure you want to delete device ${id}?`],
+    [/^حذف المستلم: (.+)؟$/,(_,name)=>`Delete recipient ${name}?`],
+    [/^حذف الموقع: (.+)؟$/,(_,name)=>`Delete location ${name}?`],
+    [/^لا توجد شهادة مرفقة$/,()=>`No certificate attached`],
+    [/^نوع الملف غير مسموح؛ استخدم PDF أو صورة$/,()=>`File type not allowed; use PDF or an image`],
+    [/^حجم الشهادة يجب ألا يتجاوز 10MB$/,()=>`Certificate size must not exceed 10MB`],
+    [/^هذه العملية متاحة للمدير أو أمين المخزن فقط$/,()=>`This action is available to admins and storekeepers only`]
+  ];
+  for(const [pattern,replacer] of rules)if(pattern.test(text))return prefix+text.replace(pattern,replacer);
+  return source;
+}
+
+function translateDom(root=document.body){
+  if(!root||I18N_RUNNING)return;
+  I18N_RUNNING=true;
+  try{
+    const nodes=[];
+    if(root.nodeType===Node.TEXT_NODE)nodes.push(root);
+    else{
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      let node;while(node=walker.nextNode())nodes.push(node);
+    }
+    nodes.forEach(node=>{
+      const parent=node.parentElement;
+      if(!parent||parent.closest('script,style,[data-language-control]'))return;
+      if(!I18N_TEXT_SOURCES.has(node)){
+        I18N_TEXT_SOURCES.set(node,node.nodeValue);
+        if(parent.tagName==='OPTION'&&!parent.hasAttribute('value'))parent.setAttribute('value',node.nodeValue.trim());
+      }
+      const original=I18N_TEXT_SOURCES.get(node);
+      const leading=original.match(/^\s*/)?.[0]||'',trailing=original.match(/\s*$/)?.[0]||'';
+      const core=original.trim();
+      const translated=CURRENT_LANG==='en'?translateRuntimeText(core):core;
+      const next=leading+translated+trailing;
+      if(node.nodeValue!==next)node.nodeValue=next;
+    });
+    const elements=root.nodeType===Node.ELEMENT_NODE?[root,...root.querySelectorAll('*')]:[];
+    elements.forEach(element=>{
+      if(element.closest('[data-language-control]'))return;
+      if(!I18N_ATTR_SOURCES.has(element)){
+        const saved={};
+        ['placeholder','title','aria-label'].forEach(name=>{if(element.hasAttribute(name))saved[name]=element.getAttribute(name);});
+        I18N_ATTR_SOURCES.set(element,saved);
+      }
+      const saved=I18N_ATTR_SOURCES.get(element);
+      Object.entries(saved).forEach(([name,original])=>element.setAttribute(name,CURRENT_LANG==='en'?translateRuntimeText(original):original));
+    });
+  }finally{I18N_RUNNING=false;}
+}
+
+function refreshLanguageControls(){
+  document.querySelectorAll('[data-language-control]').forEach(button=>button.textContent=CURRENT_LANG==='ar'?'English':'العربية');
+}
+
+function applyLanguage(){
+  document.documentElement.lang=CURRENT_LANG;
+  document.documentElement.dir=CURRENT_LANG==='en'?'ltr':'rtl';
+  document.body.dir=document.documentElement.dir;
+  document.title=CURRENT_LANG==='en'?'Sky Field Equipment Tracking':'نظام متابعة الأجهزة';
+  translateDom(document.body);
+  refreshLanguageControls();
+}
+
+function setLanguage(language){
+  CURRENT_LANG=language==='en'?'en':'ar';
+  localStorage.setItem(LANGUAGE_KEY,CURRENT_LANG);
+  applyLanguage();
+  const formDate=document.getElementById('f-date');
+  if(formDate)formDate.textContent=new Date().toLocaleDateString(uiLocale(),{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  if(typeof renderDashboard==='function')renderDashboard();
+  if(typeof renderInventory==='function')renderInventory();
+  if(typeof renderCalibration==='function')renderCalibration();
+  if(typeof renderDevicesMgmt==='function')renderDevicesMgmt();
+  if(typeof renderLog==='function')renderLog();
+  translateDom(document.body);
+}
+
+function toggleLanguage(){setLanguage(CURRENT_LANG==='ar'?'en':'ar');}
+function localizedConfirm(message){return confirm(translateRuntimeText(message));}
+function localizedPrompt(message,defaultValue){return prompt(translateRuntimeText(message),defaultValue);}
+
+const languageObserver=new MutationObserver(mutations=>{
+  if(CURRENT_LANG!=='en'||I18N_RUNNING)return;
+  mutations.forEach(mutation=>{
+    if(mutation.type==='characterData')translateDom(mutation.target);
+    mutation.addedNodes.forEach(node=>{
+      if(node.nodeType===Node.ELEMENT_NODE||node.nodeType===Node.TEXT_NODE)translateDom(node);
+    });
+  });
+});
+
 // ── Supabase configuration & data access ─────────────────────
 const SB_URL_KEY = 'sf_supabase_url';
 const SB_ANON_KEY_KEY = 'sf_supabase_anon_key';
@@ -962,7 +1351,7 @@ async function syncFromCloud() {
     applyRolePermissions();
     const remoteEmpty=!movements.length&&!devices.length&&!engineers.length;
     const localHasData=localSnapshot.records.length||localSnapshot.inventory.length||localSnapshot.engineers.some(e=>e.name!=='مدير المخزن (صالح)');
-    if(remoteEmpty&&localHasData&&canEdit()&&confirm('قاعدة Supabase فارغة، لكن توجد بيانات محفوظة في هذا المتصفح. هل تريد نقلها الآن إلى Supabase؟')){
+    if(remoteEmpty&&localHasData&&canEdit()&&localizedConfirm('قاعدة Supabase فارغة، لكن توجد بيانات محفوظة في هذا المتصفح. هل تريد نقلها الآن إلى Supabase؟')){
       await migrateLocalSnapshot(localSnapshot);
       toast('✅ تم نقل البيانات الحالية إلى Supabase');
       return syncFromCloud();
@@ -1168,14 +1557,15 @@ function calibrationState(device) {
 
 function calibrationBadge(device) {
   const state = calibrationState(device);
-  const suffix = state.days !== null && state.days >= 0 && state.key !== 'valid' ? ` · ${state.days} يوم` : '';
-  return `<span class="badge ${state.badge}">${state.label}${suffix}</span>`;
+  const suffix = state.days !== null && state.days >= 0 && state.key !== 'valid'
+    ? ` · ${state.days} ${CURRENT_LANG==='en'?'days':'يوم'}` : '';
+  return `<span class="badge ${state.badge}">${translateRuntimeText(state.label)}${suffix}</span>`;
 }
 
 function formatDate(value) {
   if(!value) return '—';
   const date = new Date(value + 'T12:00:00');
-  return Number.isNaN(date.getTime()) ? escapeHTML(value) : date.toLocaleDateString('ar-SA',{year:'numeric',month:'2-digit',day:'2-digit'});
+  return Number.isNaN(date.getTime()) ? escapeHTML(value) : date.toLocaleDateString(uiLocale(),{year:'numeric',month:'2-digit',day:'2-digit'});
 }
 
 function safeCertificateLink(device) {
@@ -1231,7 +1621,7 @@ function renderDashboard() {
   Object.entries(values).forEach(([key,value])=>{ const el=document.getElementById('kpi-'+key); if(el) el.textContent=value; });
 
   const dateEl = document.getElementById('dashboard-date');
-  if(dateEl) dateEl.textContent = new Date().toLocaleDateString('ar-SA',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  if(dateEl) dateEl.textContent = new Date().toLocaleDateString(uiLocale(),{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
   const alertsEl = document.getElementById('dashboard-alerts');
   if(!alertsEl) return;
@@ -1243,10 +1633,12 @@ function renderDashboard() {
     return;
   }
   alertsEl.innerHTML = alerts.map(({device,state})=>{
-    const daysText = state.days === null ? 'أكمل البيانات' : state.days < 0 ? `منتهية منذ ${Math.abs(state.days)} يوم` : `متبقي ${state.days} يوم`;
+    const daysText = translateRuntimeText(state.days === null ? 'أكمل البيانات' : state.days < 0 ? `منتهية منذ ${Math.abs(state.days)} يوم` : `متبقي ${state.days} يوم`);
+    const serialText=translateRuntimeText(device.serial || 'بدون رقم تسلسلي');
+    const locationText=translateRuntimeText(device.location);
     return `<div class="alert-row" style="--alert:${state.color}">
       <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(device.id)} — ${escapeHTML(device.name)}</div>
-      <div class="alert-sub">${escapeHTML(device.serial || 'بدون رقم تسلسلي')} · ${escapeHTML(device.location)}</div></div>
+      <div class="alert-sub">${escapeHTML(serialText)} · ${escapeHTML(locationText)}</div></div>
       <span class="alert-days">${daysText}</span></div>`;
   }).join('');
 }
@@ -1395,7 +1787,7 @@ async function init() {
   INVENTORY = INVENTORY.map(normalizeDevice);
   loadDeviceTypes();
   const now = new Date();
-  document.getElementById('f-date').textContent = now.toLocaleDateString('ar-SA',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('f-date').textContent = now.toLocaleDateString(uiLocale(),{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   document.getElementById('f-rtime').value = now.toTimeString().slice(0,5);
   updateTimeFieldsByStatus();
 
@@ -1682,7 +2074,7 @@ function renderLog() {
 // ── Quick delete ───────────────────────────────────────────────
 function quickDelete(idx) {
   if(!requireEditPermission())return;
-  if(!confirm('هل أنت متأكد من حذف السجل '+RECORDS[idx].id+'؟')) return;
+  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+RECORDS[idx].id+'؟')) return;
   // revert inventory
   RECORDS[idx].devices.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
@@ -1754,7 +2146,7 @@ function saveEdit() {
 function deleteRecord() {
   if(!requireEditPermission())return;
   if(editIdx===null) return;
-  if(!confirm('هل أنت متأكد من حذف السجل '+RECORDS[editIdx].id+'؟')) return;
+  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+RECORDS[editIdx].id+'؟')) return;
   RECORDS[editIdx].devices.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
     if(inv){ inv.holder=WAREHOUSE_HOLDER; inv.status='متاح'; inv.location=WAREHOUSE_LOCATION; }
@@ -1973,7 +2365,7 @@ function exportExcelSettings() {
 // ── Toast ──────────────────────────────────────────────────────
 function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
+  el.textContent = translateRuntimeText(msg); el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'),2500);
 }
 
@@ -2097,7 +2489,7 @@ async function deleteEng(idx) {
   if(!requireEditPermission())return;
   const e = ENGINEERS[idx];
   if(e.name==='مدير المخزن (صالح)'){toast('لا يمكن حذف مدير المخزن الافتراضي');return;}
-  if(!confirm('حذف المستلم: ' + e.name + '؟')) return;
+  if(!localizedConfirm('حذف المستلم: ' + e.name + '؟')) return;
   ENGINEERS.splice(idx,1);
   saveEngineers();
   refreshEngDropdowns();
@@ -2163,7 +2555,7 @@ async function deleteLocation(idx) {
   if(!requireEditPermission())return;
   const l = LOCATIONS[idx];
   if(DEFAULT_LOCATIONS.includes(l)){toast('لا يمكن حذف المواقع الافتراضية');return;}
-  if(!confirm('حذف الموقع: ' + l + '؟')) return;
+  if(!localizedConfirm('حذف الموقع: ' + l + '؟')) return;
   LOCATIONS.splice(idx,1);
   saveLocations();
   refreshLocationSelects();
@@ -2257,7 +2649,7 @@ function onTypeSelect() {
 }
 
 function addNewType() {
-  const name = prompt('أدخل اسم النوع الجديد:');
+  const name = localizedPrompt('أدخل اسم النوع الجديد:');
   if(!name || !name.trim()) return;
   const trimmed = name.trim();
   if(DEVICE_TYPES.includes(trimmed)){toast('النوع موجود مسبقاً');return;}
@@ -2271,7 +2663,9 @@ function openTypeManager() {
   const list = DEVICE_TYPES.map((t,i) =>
     `${i+1}. ${t} ${DEFAULT_TYPES.includes(t)?'(افتراضي)':''}`
   ).join('\n');
-  const action = prompt('الأنواع الحالية:\n' + list + '\n\nأدخل رقم النوع لحذفه، أو اضغط إلغاء:');
+  const action = localizedPrompt(CURRENT_LANG==='en'
+    ? 'Current types:\n' + list + '\n\nEnter the type number to delete, or press Cancel:'
+    : 'الأنواع الحالية:\n' + list + '\n\nأدخل رقم النوع لحذفه، أو اضغط إلغاء:');
   if(!action || !action.trim()) return;
   const idx = parseInt(action.trim()) - 1;
   if(isNaN(idx) || idx < 0 || idx >= DEVICE_TYPES.length){toast('رقم غير صحيح');return;}
@@ -2521,7 +2915,7 @@ async function deleteDevice(idx) {
   if(!requireEditPermission())return;
   const d = INVENTORY[idx];
   if(d.status === 'غير متاح'){toast('لا يمكن حذف جهاز عند مستخدم');return;}
-  if(!confirm('هل أنت متأكد من حذف الجهاز ' + d.id + '?')) return;
+  if(!localizedConfirm('هل أنت متأكد من حذف الجهاز ' + d.id + '?')) return;
   INVENTORY.splice(idx,1);
   saveToStorage();
   await deleteCloudRow('sf_devices','device_code',d.id);
@@ -2537,6 +2931,8 @@ document.addEventListener('click', function(e){
   if(e.target===document.getElementById('device-modal')) closeDeviceModal();
 });
 
+applyLanguage();
+languageObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
 init();
 </script>
 </body>
