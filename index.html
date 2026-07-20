@@ -172,6 +172,8 @@ select{cursor:pointer}
 .config-help{font-size:11px;color:var(--muted);line-height:1.7;background:var(--light);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px}
 .file-current{font-size:11px;color:var(--muted);margin-top:5px;min-height:18px}
 body.role-viewer .btn-save,body.role-viewer .btn-edit,body.role-viewer .btn-del,body.role-viewer .btn-danger,body.role-viewer .edit-only{display:none!important}
+.viewer-note{display:none;align-items:flex-start;gap:9px;margin-bottom:14px;padding:11px 13px;border:1px solid #ffe69c;border-radius:9px;background:#fff8db;color:#664d03;font-size:12px;line-height:1.7}
+body.role-viewer .viewer-note{display:flex}
 
 /* ── Searchable Dropdown ───────────────────────────────────── */
 .srch-wrap{position:relative;width:100%;}
@@ -516,7 +518,10 @@ html{scroll-behavior:smooth}
           <option value="not-required">لا تتطلب معايرة</option>
         </select>
         <button class="btn btn-ghost" onclick="exportCalibration()" style="padding:9px 16px">📥 تصدير Excel</button>
+        <button class="btn btn-ghost" onclick="exportDeviceUpdateTemplate()" style="padding:9px 16px">📄 قالب المواصفات والمعايرة</button>
+        <button class="btn btn-save edit-only" onclick="chooseDeviceUpdateFile()" style="padding:9px 16px">📤 استيراد التحديثات</button>
       </div>
+      <div class="viewer-note"><span>🔒</span><span><strong>صلاحيتك الحالية: مشاهدة فقط.</strong><br>لتعديل الأجهزة أو بيانات المعايرة يجب أن يكون دور الحساب <span dir="ltr">admin</span> أو <span dir="ltr">storekeeper</span>.</span></div>
       <div style="overflow-x:auto">
         <table class="inv-table" style="min-width:980px">
           <thead><tr>
@@ -542,7 +547,11 @@ html{scroll-behavior:smooth}
     <div class="card-body">
       <div class="btn-row" style="justify-content:flex-start;margin-bottom:16px">
         <button class="btn btn-save" onclick="openDeviceModal()">➕ إضافة جهاز جديد</button>
+        <button class="btn btn-ghost" onclick="exportDeviceUpdateTemplate()">📄 قالب المواصفات والمعايرة</button>
+        <button class="btn btn-save edit-only" onclick="chooseDeviceUpdateFile()">📤 استيراد التحديثات</button>
+        <input id="device-update-file" type="file" accept=".xlsx,.xls" hidden onchange="importDeviceUpdates(event)">
       </div>
+      <div class="viewer-note"><span>🔒</span><span><strong>صلاحيتك الحالية: مشاهدة فقط.</strong><br>نفّذ ملف تفعيل المدير، ثم سجّل الخروج والدخول لإظهار أزرار الإضافة والتعديل.</span></div>
       <div class="toolbar no-print">
         <input class="grow" id="device-search" placeholder="🔍 بحث برقم الجهاز أو الاسم أو التسلسل..." oninput="renderDevicesMgmt()">
         <select id="device-status-filter" onchange="renderDevicesMgmt()">
@@ -604,7 +613,7 @@ html{scroll-behavior:smooth}
         </div>
         <div class="field">
           <label>المواصفات</label>
-          <input id="dm-specs" placeholder="مثال: 256 GB">
+          <input id="dm-specs" placeholder="مثال: 0–800A، الدقة 0.2%، 50/60Hz">
         </div>
         <div class="field">
           <label>الموقع</label>
@@ -627,7 +636,7 @@ html{scroll-behavior:smooth}
           <input id="dm-cal-required" type="checkbox" onchange="toggleCalibrationFields()">
           <label for="dm-cal-required">هذا الجهاز يتطلب معايرة دورية</label>
         </div>
-        <div class="field">
+        <div class="field cal-input">
           <label>رقم شهادة المعايرة</label>
           <input id="dm-cert-no" placeholder="مثال: CAL-2026-001">
         </div>
@@ -960,11 +969,21 @@ async function syncFromCloud() {
     }
     RECORDS=movements.map(dbRecordToLocal);
     INVENTORY=devices.map(dbDeviceToLocal);
+    const repairedDevices=repairLegacyMovementLocations();
     ENGINEERS=engineers.map(row=>({dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||''}));
     if(!ENGINEERS.some(e=>e.name==='مدير المخزن (صالح)')) ENGINEERS.unshift({...DEFAULT_ENGINEERS[0]});
     LOCATIONS=locations.map(row=>row.name).filter(Boolean);
     if(!LOCATIONS.length) LOCATIONS=[...DEFAULT_LOCATIONS];
     saveEngineers();saveLocations();saveToStorage();
+    if(repairedDevices.length&&canEdit()){
+      const repairResult=await client.from('sf_devices').upsert(repairedDevices.map(localDeviceToDb),{onConflict:'device_code'});
+      if(repairResult.error){
+        console.warn('Location repair save failed:',repairResult.error);
+        toast(`تم تصحيح موقع ${repairedDevices.length} جهاز محليًا، وتعذر حفظ التصحيح في Supabase`);
+      }else{
+        toast(`✅ تم تصحيح موقع ${repairedDevices.length} جهاز خارج المستودع`);
+      }
+    }
     refreshEngDropdowns();refreshLocationSelects();renderEngTable();renderLocations();
     updateRecId();renderInventory();renderDevicesMgmt();renderLog();renderDashboard();renderCalibration();
     showSyncBadge('✓ متزامن مع Supabase','#155724','#D4EDDA');
@@ -1096,6 +1115,30 @@ function normalizeDevice(device) {
     certificateNo: d.certificateNo || '', calibrationLab: d.calibrationLab || '',
     certificatePath: d.certificatePath || '', certificateUrl: d.certificateUrl || '', notes: d.notes || ''
   };
+}
+
+const WAREHOUSE_HOLDER = 'مدير المخزن (صالح)';
+const WAREHOUSE_LOCATION = 'المستودع';
+
+function applyMovementStateToDevice(device,record) {
+  if(!device||!record)return;
+  const returnedToWarehouse = record.engineer === WAREHOUSE_HOLDER;
+  device.holder = returnedToWarehouse ? WAREHOUSE_HOLDER : record.engineer;
+  device.status = returnedToWarehouse ? 'متاح' : 'غير متاح';
+  device.location = returnedToWarehouse ? WAREHOUSE_LOCATION : (record.location || device.location || 'خارج المستودع');
+}
+
+function repairLegacyMovementLocations() {
+  const repaired=[];
+  INVENTORY.forEach(device=>{
+    if(device.status!=='غير متاح'||device.holder===WAREHOUSE_HOLDER||device.location!==WAREHOUSE_LOCATION)return;
+    const latest=[...RECORDS].reverse().find(record=>
+      record.engineer===device.holder&&record.location&&record.location!==WAREHOUSE_LOCATION&&
+      Array.isArray(record.devices)&&record.devices.some(item=>item.id===device.id)
+    );
+    if(latest){device.location=latest.location;repaired.push(device);}
+  });
+  return repaired;
 }
 
 function escapeHTML(value) {
@@ -1239,6 +1282,109 @@ function exportCalibration() {
   XLSX.utils.book_append_sheet(wb,ws,'المعايرة');
   XLSX.writeFile(wb,'متابعة_معايرة_الأجهزة_'+new Date().toISOString().slice(0,10)+'.xlsx');
   toast('✅ تم تصدير تقرير المعايرة');
+}
+
+function exportDeviceUpdateTemplate() {
+  const headers = ['رقم الجهاز','اسم الجهاز (مرجعي)','الرقم التسلسلي (مرجعي)','الماركة / الموديل','المواصفات','المعايرة مطلوبة','تاريخ آخر معايرة','تاريخ انتهاء المعايرة','رقم الشهادة','معمل المعايرة','رابط الشهادة','ملاحظات'];
+  const rows = INVENTORY.map(d=>[
+    d.id,d.name,d.serial||'',d.brand||'',d.specs||'',d.calibrationRequired?'نعم':'لا',
+    d.calibrationDate||'',d.calibrationExpiry||'',d.certificateNo||'',d.calibrationLab||'',d.certificateUrl||'',d.notes||''
+  ]);
+  const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+  ws['!cols']=[{wch:14},{wch:30},{wch:24},{wch:26},{wch:34},{wch:18},{wch:18},{wch:20},{wch:20},{wch:26},{wch:38},{wch:34}];
+  ws['!autofilter']={ref:`A1:L${rows.length+1}`};
+  XLSX.utils.book_append_sheet(wb,ws,'الأجهزة والمعايرة');
+  const guide=[
+    ['تعليمات تحديث المواصفات والمعايرة'],
+    ['1','لا تغيّر رقم الجهاز؛ يستخدم النظام هذا الرقم للعثور على الجهاز.'],
+    ['2','أدخل المواصفات والماركة، ثم اختر نعم أو لا في عمود المعايرة مطلوبة.'],
+    ['3','استخدم التاريخ بصيغة YYYY-MM-DD مثل 2026-07-20.'],
+    ['4','يمكن إضافة رابط شهادة، أما رفع ملف PDF أو صورة فيتم من شاشة تعديل الجهاز.'],
+    ['5','بعد الحفظ استخدم زر استيراد التحديثات داخل إدارة الأجهزة أو مركز المعايرة.']
+  ];
+  const help=XLSX.utils.aoa_to_sheet(guide);help['!cols']=[{wch:8},{wch:92}];
+  XLSX.utils.book_append_sheet(wb,help,'تعليمات');
+  XLSX.writeFile(wb,'قالب_مواصفات_ومعايرة_الأجهزة_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast('✅ تم تنزيل قالب المواصفات والمعايرة');
+}
+
+function chooseDeviceUpdateFile(){
+  if(!requireEditPermission())return;
+  document.getElementById('device-update-file').click();
+}
+
+function deviceImportValue(row,names){
+  const target=Object.keys(row).find(key=>names.includes(String(key).trim()));
+  return target===undefined?undefined:row[target];
+}
+
+function importedDateToISO(value){
+  if(value===undefined||value===null||value==='')return '';
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString().slice(0,10);
+  if(typeof value==='number'){
+    const parsed=XLSX.SSF.parse_date_code(value);
+    if(parsed)return `${parsed.y}-${String(parsed.m).padStart(2,'0')}-${String(parsed.d).padStart(2,'0')}`;
+  }
+  const digits=String(value).trim().replace(/[٠-٩]/g,ch=>'٠١٢٣٤٥٦٧٨٩'.indexOf(ch));
+  const iso=digits.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)$/);
+  if(iso)return `${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;
+  const dmy=digits.match(/^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{4})$/);
+  if(dmy)return `${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`;
+  return digits;
+}
+
+function importedBoolean(value){
+  return ['نعم','yes','true','1','مطلوبة','required'].includes(String(value??'').trim().toLowerCase());
+}
+
+async function importDeviceUpdates(event){
+  const input=event.target,file=input.files?.[0];
+  if(!file)return;
+  if(!requireEditPermission()){input.value='';return;}
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+    const sheetName=wb.SheetNames.includes('الأجهزة والمعايرة')?'الأجهزة والمعايرة':
+      (wb.SheetNames.includes('المخزون')?'المخزون':wb.SheetNames[0]);
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:'',raw:true});
+    let updated=0,missing=0,invalid=0;
+    for(const row of rows){
+      const id=String(deviceImportValue(row,['رقم الجهاز','device_code','id'])??'').trim();
+      if(!id)continue;
+      const device=INVENTORY.find(d=>d.id===id);
+      if(!device){missing++;continue;}
+      const brand=deviceImportValue(row,['الماركة / الموديل','الماركة','brand']);
+      const specs=deviceImportValue(row,['المواصفات','specs','specifications']);
+      const required=deviceImportValue(row,['المعايرة مطلوبة','calibration_required']);
+      const calDate=deviceImportValue(row,['تاريخ آخر معايرة','calibration_date']);
+      const expiry=deviceImportValue(row,['تاريخ انتهاء المعايرة','calibration_expiry']);
+      const certNo=deviceImportValue(row,['رقم الشهادة','certificate_no']);
+      const lab=deviceImportValue(row,['معمل المعايرة','calibration_lab']);
+      const certUrl=deviceImportValue(row,['رابط الشهادة','certificate_url']);
+      const notes=deviceImportValue(row,['ملاحظات','notes']);
+      const nextCalDate=calDate===undefined?device.calibrationDate:importedDateToISO(calDate);
+      const nextExpiry=expiry===undefined?device.calibrationExpiry:importedDateToISO(expiry);
+      if(nextCalDate&&nextExpiry&&nextExpiry<nextCalDate){invalid++;continue;}
+      if(brand!==undefined)device.brand=String(brand??'').trim();
+      if(specs!==undefined)device.specs=String(specs??'').trim();
+      if(required!==undefined)device.calibrationRequired=importedBoolean(required);
+      if(calDate!==undefined)device.calibrationDate=nextCalDate;
+      if(expiry!==undefined)device.calibrationExpiry=nextExpiry;
+      if(certNo!==undefined)device.certificateNo=String(certNo??'').trim();
+      if(lab!==undefined)device.calibrationLab=String(lab??'').trim();
+      if(certUrl!==undefined)device.certificateUrl=String(certUrl??'').trim();
+      if(notes!==undefined)device.notes=String(notes??'').trim();
+      updated++;
+    }
+    if(!updated){toast('لم يتم العثور على أجهزة صالحة للتحديث');return;}
+    saveToStorage();
+    const saved=await pushToCloud(null,null);
+    renderDevicesMgmt();renderInventory();renderCalibration();renderDashboard();
+    const details=[missing?`${missing} رقم غير موجود`:null,invalid?`${invalid} تاريخ غير صحيح`:null].filter(Boolean).join('، ');
+    toast(`${saved?'✅':'⚠️'} تم تحديث ${updated} جهاز${details?' — '+details:''}`);
+  }catch(e){
+    console.error('Device update import error:',e);
+    toast('⚠️ تعذر قراءة ملف التحديث: '+e.message);
+  }finally{input.value='';}
 }
 
 // ── Init ───────────────────────────────────────────────────────
@@ -1448,15 +1594,10 @@ function saveRecord() {
 
   RECORDS.push(rec);
 
-  // Update inventory holders & status
+  // Update inventory holder, availability, and actual location
   devs.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){
-      inv.holder = isManager ? 'مدير المخزن (صالح)' : eng;
-      // مدير المخزن يسلّم الجهاز → الجهاز غير متاح (عند مهندس)
-      // عندما يُرجع المهندس → مدير المخزن يستلمه → متاح
-      inv.status = isManager ? 'متاح' : 'غير متاح';
-    }
+    if(inv)applyMovementStateToDevice(inv,rec);
   });
 
   saveToStorage();
@@ -1545,7 +1686,7 @@ function quickDelete(idx) {
   // revert inventory
   RECORDS[idx].devices.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){ inv.holder='مدير المخزن (صالح)'; inv.status='متاح'; }
+    if(inv){ inv.holder=WAREHOUSE_HOLDER; inv.status='متاح'; inv.location=WAREHOUSE_LOCATION; }
   });
   const _delId = RECORDS[idx].id;
   RECORDS.splice(idx,1);
@@ -1597,14 +1738,10 @@ function saveEdit() {
   r.status = document.getElementById('e-status').value;
   r.notes = document.getElementById('e-notes').value;
 
-  // Update inventory status based on engineer
-  const isMgr = r.engineer === 'مدير المخزن (صالح)';
+  // Update inventory holder, availability, and actual location
   r.devices.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){
-      inv.holder = isMgr ? 'مدير المخزن (صالح)' : r.engineer;
-      inv.status = isMgr ? 'متاح' : 'غير متاح';
-    }
+    if(inv)applyMovementStateToDevice(inv,r);
   });
 
   closeEdit();
@@ -1620,7 +1757,7 @@ function deleteRecord() {
   if(!confirm('هل أنت متأكد من حذف السجل '+RECORDS[editIdx].id+'؟')) return;
   RECORDS[editIdx].devices.forEach(d=>{
     const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){ inv.holder='مدير المخزن (صالح)'; inv.status='متاح'; }
+    if(inv){ inv.holder=WAREHOUSE_HOLDER; inv.status='متاح'; inv.location=WAREHOUSE_LOCATION; }
   });
   const _mDelId = RECORDS[editIdx].id;
   RECORDS.splice(editIdx,1);
