@@ -413,11 +413,19 @@ html{scroll-behavior:smooth}
             <option value="تسليم">تسليم</option>
           </select>
         </div>
+        <div class="field" id="f-rdate-wrap">
+          <label>تاريخ الاستلام</label>
+          <input type="date" id="f-rdate">
+        </div>
         <div class="field" id="f-rtime-wrap">
           <label>وقت الاستلام</label>
           <input type="time" id="f-rtime">
         </div>
-        <div class="field">
+        <div class="field" id="f-ddate-wrap">
+          <label>تاريخ التسليم</label>
+          <input type="date" id="f-ddate">
+        </div>
+        <div class="field" id="f-dtime-wrap">
           <label>وقت التسليم</label>
           <input type="time" id="f-dtime">
         </div>
@@ -483,7 +491,7 @@ html{scroll-behavior:smooth}
           <thead>
             <tr>
               <th>رقم السجل</th><th>التاريخ</th><th>المُسلِّم</th><th>المستلم</th>
-              <th>الأجهزة</th><th>وقت الاستلام</th><th>وقت التسليم</th>
+              <th>الأجهزة</th><th>تاريخ ووقت الاستلام</th><th>تاريخ ووقت التسليم</th>
               <th>الموقع</th><th>الحالة</th><th class="no-print">إجراءات</th>
             </tr>
           </thead>
@@ -785,8 +793,16 @@ html{scroll-behavior:smooth}
           <input id="e-empid" class="auto" readonly>
         </div>
         <div class="field">
+          <label>تاريخ الاستلام</label>
+          <input type="date" id="e-rdate">
+        </div>
+        <div class="field">
           <label>وقت الاستلام</label>
           <input type="time" id="e-rtime">
+        </div>
+        <div class="field">
+          <label>تاريخ التسليم</label>
+          <input type="date" id="e-ddate">
         </div>
         <div class="field">
           <label>وقت التسليم</label>
@@ -928,6 +944,11 @@ const AR_TO_EN=Object.freeze({
   "تسليم":"Return",
   "وقت الاستلام":"Assignment time",
   "وقت التسليم":"Return time",
+  "تاريخ الاستلام":"Assignment date",
+  "تاريخ التسليم":"Return date",
+  "تاريخ ووقت الاستلام":"Assignment date and time",
+  "تاريخ ووقت التسليم":"Return date and time",
+  "التاريخ والتوقيت":"Date and time",
   "الأجهزة المُستلَمة":"Assigned devices",
   "رقم الجهاز":"Device ID",
   "اسم الجهاز":"Device name",
@@ -1079,6 +1100,8 @@ const AR_TO_EN=Object.freeze({
   "الرجاء اختيار المستلم":"Please select a recipient",
   "الرجاء اختيار جهاز واحد على الأقل":"Please select at least one device",
   "لا يمكن اختيار الجهاز نفسه أكثر من مرة":"The same device cannot be selected more than once",
+  "تاريخ الاستلام مطلوب":"Assignment date is required",
+  "تاريخ التسليم مطلوب":"Return date is required",
   "يوجد جهاز غير متاح ضمن الاختيار":"The selection contains an unavailable device",
   "الأجهزة المختارة مسجلة بالفعل باسم المستلم":"The selected devices are already assigned to this recipient",
   "جاري الحفظ في Supabase...":"Saving to Supabase...",
@@ -1306,7 +1329,8 @@ function dbRecordToLocal(row) {
     id:row.record_no,date:row.movement_date,engineer:row.engineer,empid:row.empid||'',
     deliveredBy:row.delivered_by||'',
     nat:row.nationality||'',phone:row.phone||'',location:row.location,
-    status:row.movement_type,rtime:row.received_time||'',dtime:row.delivered_time||'',
+    status:row.movement_type,rdate:row.received_date||'',rtime:row.received_time||'',
+    ddate:row.delivered_date||'',dtime:row.delivered_time||'',
     notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[]
   };
 }
@@ -1316,7 +1340,8 @@ function localRecordToDb(record) {
     record_no:record.id,movement_date:record.date,engineer:record.engineer,
     delivered_by:getRecordDeliveredBy(record)||null,
     empid:record.empid||null,nationality:record.nat||null,phone:record.phone||null,
-    location:record.location,movement_type:record.status,received_time:record.rtime||null,
+    location:record.location,movement_type:record.status,received_date:record.rdate||null,
+    received_time:record.rtime||null,delivered_date:record.ddate||null,
     delivered_time:record.dtime||null,notes:record.notes||null,devices:record.devices||[],
     updated_at:new Date().toISOString()
   };
@@ -1793,6 +1818,7 @@ async function init() {
   loadDeviceTypes();
   const now = new Date();
   document.getElementById('f-date').textContent = now.toLocaleDateString(uiLocale(),{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('f-rdate').value = localISODate(now);
   document.getElementById('f-rtime').value = now.toTimeString().slice(0,5);
   updateTimeFieldsByStatus();
 
@@ -1841,24 +1867,42 @@ function updateTimeFieldsByStatus() {
   const status = document.getElementById('f-status').value;
   const isTasleem = status === 'تسليم';
   const now = new Date().toTimeString().slice(0,5);
+  const today = localISODate();
 
+  const rdateWrap = document.getElementById('f-rdate-wrap');
   const rtimeWrap = document.getElementById('f-rtime-wrap');
+  const rdateInput = document.getElementById('f-rdate');
   const rtimeInput = document.getElementById('f-rtime');
+  const ddateInput = document.getElementById('f-ddate');
   const dtimeInput = document.getElementById('f-dtime');
 
   if(isTasleem) {
-    // تسليم: إخفاء وقت الاستلام، تعيين وقت التسليم للوقت الحالي
+    // تسليم: إخفاء تاريخ ووقت الاستلام، وتعيين تاريخ ووقت التسليم الحاليين
+    rdateWrap.style.display = 'none';
     rtimeWrap.style.display = 'none';
+    rdateInput.value = '';
     rtimeInput.value = '';
+    ddateInput.disabled = false;
+    ddateInput.style.background = '';
+    ddateInput.style.color = '';
+    ddateInput.style.borderColor = '';
+    ddateInput.value = today;
     dtimeInput.disabled = false;
     dtimeInput.style.background = '';
     dtimeInput.style.color = '';
     dtimeInput.style.borderColor = '';
     dtimeInput.value = now;
   } else {
-    // استلام: إظهار وقت الاستلام، إخفاء وقت التسليم
+    // استلام: إظهار تاريخ ووقت الاستلام، وتعطيل تاريخ ووقت التسليم
+    rdateWrap.style.display = '';
     rtimeWrap.style.display = '';
+    rdateInput.value = today;
     rtimeInput.value = now;
+    ddateInput.disabled = true;
+    ddateInput.value = '';
+    ddateInput.style.background = '#f0f0f0';
+    ddateInput.style.color = '#aaa';
+    ddateInput.style.borderColor = '#ddd';
     dtimeInput.disabled = true;
     dtimeInput.value = '';
     dtimeInput.style.background = '#f0f0f0';
@@ -1873,12 +1917,20 @@ function fillEditEng() {
   document.getElementById('e-empid').value = eng.empid||'';
   const isManager = name === 'مدير المخزن (صالح)';
   document.getElementById('e-status').value = isManager ? 'تسليم' : 'استلام';
+  const editDdate = document.getElementById('e-ddate');
   const editDtime = document.getElementById('e-dtime');
   if(isManager) {
+    editDdate.disabled = false;
+    editDdate.style.background = '';
+    editDdate.style.color = '';
     editDtime.disabled = false;
     editDtime.style.background = '';
     editDtime.style.color = '';
   } else {
+    editDdate.disabled = true;
+    editDdate.value = '';
+    editDdate.style.background = '#f0f0f0';
+    editDdate.style.color = '#aaa';
     editDtime.disabled = true;
     editDtime.value = '';
     editDtime.style.background = '#f0f0f0';
@@ -1975,6 +2027,20 @@ function getDate() {
   return new Date().toLocaleDateString('ar-SA',{year:'numeric',month:'2-digit',day:'2-digit'});
 }
 
+function localISODate(date=new Date()) {
+  const local = new Date(date.getTime()-date.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,10);
+}
+
+function formatMovementDateTime(date,time) {
+  let formattedDate='';
+  if(date){
+    const parts=String(date).split('-');
+    formattedDate=parts.length===3?`${parts[2]}/${parts[1]}/${parts[0]}`:String(date);
+  }
+  return [formattedDate,time].filter(Boolean).join(' — ')||'—';
+}
+
 // ── Save record ───────────────────────────────────────────────
 function saveRecord() {
   if(!requireEditPermission())return;
@@ -1983,6 +2049,9 @@ function saveRecord() {
   let devs = getSelectedDevices();
   if(!devs.length){toast('⚠️ الرجاء اختيار جهاز واحد على الأقل');return;}
   if(new Set(devs.map(d=>d.id)).size !== devs.length){toast('⚠️ لا يمكن اختيار الجهاز نفسه أكثر من مرة');return;}
+  const movementStatus=document.getElementById('f-status').value;
+  if(movementStatus==='استلام'&&!document.getElementById('f-rdate').value){toast('⚠️ تاريخ الاستلام مطلوب');return;}
+  if(movementStatus==='تسليم'&&!document.getElementById('f-ddate').value){toast('⚠️ تاريخ التسليم مطلوب');return;}
   if(devs.every(d=>(d.holder||WAREHOUSE_HOLDER)===eng)){toast('⚠️ الأجهزة المختارة مسجلة بالفعل باسم المستلم');return;}
   devs = prepareMovementDevices(devs);
   const deliveredBy = [...new Set(devs.map(d=>d.previousHolder).filter(Boolean))].join('، ');
@@ -1997,7 +2066,9 @@ function saveRecord() {
     phone: document.getElementById('f-phone').value,
     location: document.getElementById('f-loc').value,
     status: document.getElementById('f-status').value,
+    rdate: document.getElementById('f-rdate').value,
     rtime: document.getElementById('f-rtime').value,
+    ddate: document.getElementById('f-ddate').value,
     dtime: document.getElementById('f-dtime').value,
     notes: document.getElementById('f-notes').value,
     devices: devs
@@ -2030,10 +2101,13 @@ function resetForm() {
   document.getElementById('f-nat').value='';
   document.getElementById('f-phone').value='';
   document.getElementById('f-notes').value='';
+  document.getElementById('f-ddate').value='';
   document.getElementById('f-dtime').value='';
+  document.getElementById('f-rdate').value=localISODate();
   document.getElementById('f-rtime').value=new Date().toTimeString().slice(0,5);
   document.getElementById('f-loc').value=LOCATIONS[0]||'المتجر أ';
   document.getElementById('f-status').value='استلام';
+  updateTimeFieldsByStatus();
   document.getElementById('form-status-badge').textContent='جديد';
   // Reset device rows
   document.getElementById('devices-tbody').innerHTML='';
@@ -2077,8 +2151,8 @@ function renderLog() {
       <td style="font-weight:500">${escapeHTML(getRecordDeliveredBy(r)||'—')}</td>
       <td style="font-weight:500">${r.engineer}</td>
       <td><div class="devices-cell">${devTags}</div></td>
-      <td>${r.rtime||'—'}</td>
-      <td>${r.dtime||'—'}</td>
+      <td>${formatMovementDateTime(r.rdate,r.rtime)}</td>
+      <td>${formatMovementDateTime(r.ddate,r.dtime)}</td>
       <td>${r.location}</td>
       <td>${statusBadge(r.status)}</td>
       <td class="no-print">
@@ -2116,11 +2190,14 @@ function openEdit(idx) {
   document.getElementById('edit-rec-title').textContent = r.id;
   document.getElementById('e-eng').value = r.engineer;
   document.getElementById('e-empid').value = r.empid;
+  document.getElementById('e-rdate').value = r.rdate||'';
   document.getElementById('e-rtime').value = r.rtime;
+  document.getElementById('e-ddate').value = r.ddate||'';
   document.getElementById('e-dtime').value = r.dtime;
   document.getElementById('e-loc').value = r.location;
   document.getElementById('e-status').value = r.status;
   document.getElementById('e-notes').value = r.notes;
+  fillEditEng();
   // show devices as tags
   document.getElementById('e-devices-list').innerHTML =
     r.devices.map(d=>`<span class="dev-tag" style="font-size:12px;padding:4px 10px">${d.id} — ${d.name}</span>`).join('');
@@ -2145,7 +2222,9 @@ function saveEdit() {
 
   r.engineer = newEng;
   r.empid = document.getElementById('e-empid').value;
+  r.rdate = document.getElementById('e-rdate').value;
   r.rtime = document.getElementById('e-rtime').value;
+  r.ddate = document.getElementById('e-ddate').value;
   r.dtime = document.getElementById('e-dtime').value;
   r.location = document.getElementById('e-loc').value;
   r.status = document.getElementById('e-status').value;
@@ -2227,10 +2306,10 @@ function buildPrintHTML(r) {
     </div>
 
     <div style="margin-bottom:16px">
-      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">التوقيت</div>
+      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">التاريخ والتوقيت</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">
-        <div style="padding:9px 12px;border-left:1px solid #ddd"><div style="font-size:10px;color:#999">وقت الاستلام</div><div style="font-size:14px;font-weight:600">${r.rtime||'—'}</div></div>
-        <div style="padding:9px 12px"><div style="font-size:10px;color:#999">وقت التسليم</div><div style="font-size:14px;font-weight:600">${r.dtime||'—'}</div></div>
+        <div style="padding:9px 12px;border-left:1px solid #ddd"><div style="font-size:10px;color:#999">تاريخ ووقت الاستلام</div><div style="font-size:14px;font-weight:600">${formatMovementDateTime(r.rdate,r.rtime)}</div></div>
+        <div style="padding:9px 12px"><div style="font-size:10px;color:#999">تاريخ ووقت التسليم</div><div style="font-size:14px;font-weight:600">${formatMovementDateTime(r.ddate,r.dtime)}</div></div>
       </div>
     </div>
 
@@ -2282,7 +2361,9 @@ function openPrintPreview() {
     empid: document.getElementById('f-empid').value,
     location: document.getElementById('f-loc').value,
     status: document.getElementById('f-status').value,
+    rdate: document.getElementById('f-rdate').value,
     rtime: document.getElementById('f-rtime').value,
+    ddate: document.getElementById('f-ddate').value,
     dtime: document.getElementById('f-dtime').value,
     notes: document.getElementById('f-notes').value,
     devices: preparedDevs
@@ -2327,12 +2408,12 @@ function buildWorkbook() {
   const wb = XLSX.utils.book_new();
 
   // Log sheet
-  const logData = [["رقم السجل","التاريخ","المُسلِّم","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","وقت الاستلام","وقت التسليم","الموقع","الحالة","ملاحظات"]];
+  const logData = [["رقم السجل","التاريخ","المُسلِّم","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","تاريخ الاستلام","وقت الاستلام","تاريخ التسليم","وقت التسليم","الموقع","الحالة","ملاحظات"]];
   RECORDS.forEach(r=>{
-    logData.push([r.id,r.date,getRecordDeliveredBy(r),r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rtime||'',r.dtime||'',r.location,r.status,r.notes||'']);
+    logData.push([r.id,r.date,getRecordDeliveredBy(r),r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rdate||'',r.rtime||'',r.ddate||'',r.dtime||'',r.location,r.status,r.notes||'']);
   });
   const ws1 = XLSX.utils.aoa_to_sheet(logData);
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:12},{wch:12},{wch:16},{wch:12},{wch:24}];
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:14},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:24}];
   XLSX.utils.book_append_sheet(wb,ws1,"سجل الاستلام");
 
   // Inventory sheet
