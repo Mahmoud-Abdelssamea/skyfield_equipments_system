@@ -306,7 +306,7 @@ html{scroll-behavior:smooth}
   <div style="display:flex;align-items:center;gap:8px">
     <button class="lang-switch" data-language-control onclick="toggleLanguage()">English</button>
     <span id="sync-badge" style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;background:#FFF3CD;color:#856404">غير متصل</span>
-    <button onclick="syncFromCloud().then(ok=>{if(ok){updateRecId();renderInventory();renderLog();}})" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🔄 مزامنة</button>
+    <button onclick="syncAllData().then(ok=>{if(ok){updateRecId();renderInventory();renderLog();}})" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🔄 مزامنة</button>
     <button onclick="openSupabaseSettings()" style="background:#E94560;border:none;color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">⚙️ Supabase</button>
     <span class="badge b-teal" id="user-role-badge">—</span>
     <span class="badge" id="total-lbl">0 سجل</span>
@@ -1136,6 +1136,12 @@ const AR_TO_EN=Object.freeze({
   "جاري رفع شهادة المعايرة...":"Uploading calibration certificate...",
   "رقم الجهاز موجود مسبقاً":"Device ID already exists",
   "تم الحفظ محليًا، لكن تعذر الحفظ في Supabase":"Saved locally, but could not save to Supabase",
+  "الرقم التسلسلي مستخدم لجهاز آخر":"The serial number is already used by another device",
+  "لا توجد جلسة دخول صالحة؛ سجّل الدخول مرة أخرى":"There is no valid sign-in session; please sign in again",
+  "لا توجد صلاحية لحفظ الأجهزة في Supabase":"You do not have permission to save devices in Supabase",
+  "تعذر الوصول إلى Supabase بعد 3 محاولات":"Could not reach Supabase after 3 attempts",
+  "محفوظ محليًا وبانتظار المزامنة":"Saved locally and waiting to sync",
+  "تمت مزامنة الأجهزة المعلقة":"Pending devices synchronized",
   "لا يمكن حذف جهاز عند مستخدم":"A device assigned to a user cannot be deleted",
   "أدخل اسم النوع الجديد:":"Enter the new type name:",
   "ابحث عن جهاز...":"Search for a device...",
@@ -1283,6 +1289,8 @@ let SUPABASE_ANON_KEY = localStorage.getItem(SB_ANON_KEY_KEY) || DEFAULT_SUPABAS
 let sbClient = null;
 let authSubscription = null;
 let CURRENT_ROLE = 'viewer';
+const LS_PENDING_DEVICES = 'sf_pending_device_ids';
+let LAST_SUPABASE_ERROR = '';
 
 function canEdit(){return CURRENT_ROLE==='admin'||CURRENT_ROLE==='storekeeper';}
 function requireEditPermission(){if(canEdit())return true;toast('هذه العملية متاحة للمدير أو أمين المخزن فقط');return false;}
@@ -1355,6 +1363,94 @@ function localEngineerToDb(engineer) {
 function throwIfSupabaseError(result,label) {
   if(result?.error) throw new Error(`${label}: ${result.error.message}`);
   return result?.data;
+}
+
+function getPendingDeviceIds() {
+  try{return JSON.parse(localStorage.getItem(LS_PENDING_DEVICES)||'[]').filter(Boolean);}
+  catch(e){return [];}
+}
+
+function setPendingDevice(id,pending=true) {
+  const ids=new Set(getPendingDeviceIds());
+  if(pending)ids.add(id);else ids.delete(id);
+  localStorage.setItem(LS_PENDING_DEVICES,JSON.stringify([...ids]));
+}
+
+function waitForRetry(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+
+function isTransientSupabaseError(error) {
+  const status=Number(error?.status||0);
+  const text=[error?.message,error?.details,error?.hint].filter(Boolean).join(' ');
+  return status>=500||status===0||/failed to fetch|network|timeout|timed out|load failed|connection|gateway/i.test(text);
+}
+
+function describeDeviceSaveError(error) {
+  const text=[error?.message,error?.details,error?.hint].filter(Boolean).join(' ');
+  if(error?.code==='23505'||/duplicate key|sf_devices_serial_unique/i.test(text)){
+    if(/serial|sf_devices_serial_unique/i.test(text))return 'الرقم التسلسلي مستخدم لجهاز آخر';
+    return 'رقم الجهاز موجود مسبقاً';
+  }
+  if(error?.code==='42501'||/row-level security|permission denied|policy/i.test(text))return 'لا توجد صلاحية لحفظ الأجهزة في Supabase';
+  if(error?.code==='AUTH_SESSION_MISSING')return 'لا توجد جلسة دخول صالحة؛ سجّل الدخول مرة أخرى';
+  if(isTransientSupabaseError(error))return 'تعذر الوصول إلى Supabase بعد 3 محاولات';
+  return text||'تعذر الحفظ في Supabase';
+}
+
+async function saveSingleDeviceToCloud(device,{silent=false}={}) {
+  const client=getSupabaseClient();
+  if(!client){
+    LAST_SUPABASE_ERROR='Supabase غير معدّ';
+    if(!silent)showSyncBadge('Supabase غير معدّ','#856404','#FFF3CD');
+    return false;
+  }
+  if(!silent)showSyncBadge('جاري الحفظ...','#856404','#FFF3CD');
+  let lastError=null;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const {data:{session},error:sessionError}=await client.auth.getSession();
+      if(sessionError)throw sessionError;
+      if(!session)throw {code:'AUTH_SESSION_MISSING',message:'No active Supabase session'};
+      const result=await client.from('sf_devices').upsert(localDeviceToDb(device),{onConflict:'device_code'});
+      if(!result.error){
+        setPendingDevice(device.id,false);
+        LAST_SUPABASE_ERROR='';
+        if(!silent)showSyncBadge('✓ محفوظ في Supabase','#155724','#D4EDDA');
+        return true;
+      }
+      lastError={...result.error,status:result.status};
+    }catch(error){
+      lastError=error;
+    }
+    if(!isTransientSupabaseError(lastError)||attempt===3)break;
+    await waitForRetry(attempt===1?700:1600);
+  }
+  LAST_SUPABASE_ERROR=describeDeviceSaveError(lastError);
+  setPendingDevice(device.id,true);
+  if(!silent)showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+  console.error('Supabase device save error:',lastError);
+  return false;
+}
+
+async function retryPendingDeviceSaves(silent=true) {
+  const ids=getPendingDeviceIds();
+  if(!ids.length)return true;
+  let allSaved=true;
+  for(const id of ids){
+    const device=INVENTORY.find(item=>item.id===id);
+    if(!device){setPendingDevice(id,false);continue;}
+    if(!await saveSingleDeviceToCloud(device,{silent})){allSaved=false;}
+  }
+  if(allSaved&&!silent)toast('✅ تمت مزامنة الأجهزة المعلقة');
+  return allSaved;
+}
+
+async function syncAllData() {
+  if(!await retryPendingDeviceSaves(true)){
+    showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+    toast('⚠️ '+LAST_SUPABASE_ERROR);
+    return false;
+  }
+  return syncFromCloud();
 }
 
 async function syncFromCloud() {
@@ -2690,6 +2786,11 @@ async function doLogin() {
   errorEl.textContent='';
   document.getElementById('login-screen').classList.add('hidden');
   toast('✅ تم تسجيل الدخول');
+  if(!await retryPendingDeviceSaves(true)){
+    showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+    toast('⚠️ '+LAST_SUPABASE_ERROR);
+    return;
+  }
   await syncFromCloud();
 }
 
@@ -2706,7 +2807,10 @@ async function initializeAuth(){
   const {data:{session},error}=await client.auth.getSession();
   if(error){setLoginVisible(true,'تعذر قراءة جلسة الدخول');return;}
   setLoginVisible(!session);
-  if(session)await syncFromCloud();
+  if(session){
+    if(await retryPendingDeviceSaves(true))await syncFromCloud();
+    else showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+  }
   const {data}=client.auth.onAuthStateChange((event,nextSession)=>{
     setLoginVisible(!nextSession);
   });
@@ -2961,6 +3065,7 @@ async function saveDevice() {
   const name = document.getElementById('dm-name').value.trim();
   if(!id){toast('رقم الجهاز مطلوب');return;}
   if(!name){toast('اسم الجهاز مطلوب');return;}
+  if(deviceEditIdx===null&&INVENTORY.some(device=>device.id===id)){toast('رقم الجهاز موجود مسبقاً');return;}
 
   const previousDevice = deviceEditIdx !== null ? INVENTORY[deviceEditIdx] : null;
   const newDevice = {
@@ -2987,6 +3092,10 @@ async function saveDevice() {
     toast('⚠️ تاريخ انتهاء المعايرة يجب أن يكون بعد تاريخ المعايرة');
     return;
   }
+  if(newDevice.serial&&INVENTORY.some(device=>device.id!==id&&String(device.serial||'').trim().toLowerCase()===newDevice.serial.toLowerCase())){
+    toast('⚠️ الرقم التسلسلي مستخدم لجهاز آخر');
+    return;
+  }
 
   const certificateFile=document.getElementById('dm-cert-file').files[0];
   if(certificateFile){
@@ -3000,16 +3109,18 @@ async function saveDevice() {
   if(deviceEditIdx !== null) {
     newDevice.holder = INVENTORY[deviceEditIdx].holder;
     INVENTORY[deviceEditIdx] = newDevice;
-    toast('تم تعديل الجهاز ' + id);
   } else {
-    if(INVENTORY.find(d=>d.id===id)){toast('رقم الجهاز موجود مسبقاً');return;}
     INVENTORY.push(newDevice);
-    toast('تم إضافة الجهاز ' + id);
   }
 
   saveToStorage();
-  const saved=await pushToCloud(null,null);
-  if(!saved){toast('تم الحفظ محليًا، لكن تعذر الحفظ في Supabase');}
+  setPendingDevice(id,true);
+  const saved=await saveSingleDeviceToCloud(newDevice);
+  if(saved){
+    toast(deviceEditIdx!==null?'✅ تم تعديل الجهاز '+id+' وحفظه في Supabase':'✅ تم إضافة الجهاز '+id+' وحفظه في Supabase');
+  }else{
+    toast('⚠️ تم الحفظ محليًا: '+LAST_SUPABASE_ERROR);
+  }
   closeDeviceModal();
   renderDevicesMgmt();
   renderInventory();
@@ -3036,6 +3147,8 @@ async function deleteDevice(idx) {
 document.addEventListener('click', function(e){
   if(e.target===document.getElementById('device-modal')) closeDeviceModal();
 });
+
+window.addEventListener('online',()=>retryPendingDeviceSaves(false));
 
 applyLanguage();
 languageObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
