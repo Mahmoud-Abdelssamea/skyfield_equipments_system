@@ -2912,7 +2912,10 @@ const PRINT_EN = {
   'تاريخ الرجوع المتوقع':'Expected return date','الأجهزة':'Devices','رقم الجهاز':'Device ID','اسم الجهاز':'Device name','النوع':'Type','الرقم التسلسلي':'Serial no.',
   'المواصفات':'Specifications','ملاحظات':'Notes','توقيع المُسلِّم':'Handed over by — signature','توقيع المُستلِم':'Recipient — signature',
   'توقيع المستلم لدى العميل':'Client receiving person — signature','توقيع مندوب الجهة':'Provider representative — signature',
-  'الاسم والتاريخ':'name and date','إقامة / هوية':'Iqama / ID','تم الإنشاء بتاريخ':'Created on','يُحدَّد عند الحفظ':'Assigned when saved'
+  'الاسم والتاريخ':'name and date','إقامة / هوية':'Iqama / ID','تم الإنشاء بتاريخ':'Created on','يُحدَّد عند الحفظ':'Assigned when saved',
+  'المُسلِّم':'Handed over by','المستلم':'Recipient','المستلم — العميل (المستأجر)':'Recipient — client (renter)','المستلم — جهة الصيانة أو المعايرة':'Recipient — maintenance / calibration provider',
+  'الوظيفة':'Job title','الرقم الوظيفي':'Employee no.','نوع الحركة':'Movement type','مهندس / المستودع':'Engineer / warehouse','تأجير لعميل':'Rental to a client',
+  'صيانة أو معايرة خارجية':'Outside maintenance or calibration','مهندس':'Engineer','فني':'Technician','مسودة':'Draft'
 };
 let PRINT_LANG = null;      // null: same as the page
 let PRINT_RECORD = null;
@@ -2931,20 +2934,41 @@ function recordIqama(r) {
   return ENGINEERS.find(e => e.name === r.engineer)?.iqama || '';
 }
 
-// Renter / provider block on the printed form (and the engineer's Iqama on engineer movements).
-function printOutsideDetails(r, lang='ar') {
-  const {t} = printWords(lang);
-  const kind = r.kind || 'engineer';
-  const items = kind === 'engineer'
-    ? [['رقم الإقامة / الهوية', recordIqama(r)]]
-    : [['اسم المستلم لدى العميل', r.contact], ['رقم الإقامة / الهوية', r.idNumber], ['رقم الجوال', r.phone], ['المرجع', r.ref]];
-  const shown = items.filter(([,value]) => value);
-  if(!shown.length) return '';
-  const cell = ([label,value]) => `<div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">${escapeHTML(t(label))}</div><div style="font-size:14px;font-weight:600">${escapeHTML(value)}</div></div>`;
-  return `<div style="margin-bottom:16px">
-      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">${escapeHTML(t(kind === 'engineer' ? 'بيانات المستلم' : kind === 'rental' ? 'بيانات التأجير' : 'بيانات الصيانة / المعايرة'))}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">${shown.map(cell).join('')}</div>
+// Sender and recipient side by side, then the movement details (type, location, escort, reference).
+function printParties(r, lang='ar') {
+  const {t, tv} = printWords(lang);
+  const kind = r.kind || 'engineer', out = kind !== 'engineer';
+  const person = name => name && name !== WAREHOUSE_HOLDER ? ENGINEERS.find(e => e.name === name) : null;
+  const row = (label, value) => value ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #e5e5e5"><span style="font-size:11px;color:#888">${escapeHTML(t(label))}</span><span style="font-size:13px;font-weight:600;text-align:end">${escapeHTML(value)}</span></div>` : '';
+  const card = (title, name, rows) => `<div style="border:1px solid #ddd;border-radius:8px;overflow:hidden">
+      <div style="background:#F3F5FA;padding:7px 12px;font-size:11px;font-weight:700;color:#0F3460">${escapeHTML(t(title))}</div>
+      <div style="padding:8px 12px"><div style="font-size:15px;font-weight:700;margin-bottom:4px">${escapeHTML(name || '—')}</div>${rows.join('')}</div>
     </div>`;
+  const deliveredBy = getRecordDeliveredBy(r);
+  const sender = person(deliveredBy);
+  const senderRows = sender ? [row('الوظيفة', tv(sender.job)), row('الرقم الوظيفي', sender.empid), row('رقم الإقامة / الهوية', sender.iqama), row('رقم الجوال', sender.phone)] : [];
+  const recipient = person(r.engineer);
+  const recipientCard = kind === 'rental'
+    ? card('المستلم — العميل (المستأجر)', r.engineer, [row('اسم المستلم لدى العميل', r.contact), row('رقم الإقامة / الهوية', r.idNumber), row('رقم الجوال', r.phone)])
+    : kind === 'maintenance'
+    ? card('المستلم — جهة الصيانة أو المعايرة', r.engineer, [row('رقم الجوال', r.phone)])
+    : card('المستلم', tv(r.engineer), recipient || r.empid ? [row('الوظيفة', tv(recipient?.job)), row('الرقم الوظيفي', r.empid || recipient?.empid), row('رقم الإقامة / الهوية', recordIqama(r)), row('رقم الجوال', r.phone || recipient?.phone)] : []);
+  const details = [['نوع الحركة', t({engineer:'مهندس / المستودع', rental:'تأجير لعميل', maintenance:'صيانة أو معايرة خارجية'}[kind])],
+    ['الحالة', tv(r.status)], ['موقع العمل', tv(r.location)], ['المهندس المرافق', out ? r.escort : ''], ['المرجع', out ? r.ref : '']].filter(([,v]) => v);
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      ${card('المُسلِّم', tv(deliveredBy) || '—', senderRows)}
+      ${recipientCard}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(${Math.min(details.length,3)},1fr);border:1px solid #ddd;border-radius:8px;overflow:hidden;margin-bottom:16px">
+      ${details.map(([label,value]) => `<div style="padding:8px 12px;border-bottom:1px solid #eee"><div style="font-size:10px;color:#999">${escapeHTML(t(label))}</div><div style="font-size:13px;font-weight:600">${escapeHTML(value)}</div></div>`).join('')}
+    </div>`;
+}
+
+// Name of the saved PDF: record number, form type and recipient (the browser uses the page title).
+function printFileName(r, lang='ar') {
+  const {t, tv} = printWords(lang);
+  const title = t({engineer:'نموذج استلام وتسليم جهاز', rental:'نموذج تأجير جهاز', maintenance:'نموذج إرسال جهاز للصيانة / المعايرة'}[r.kind || 'engineer']);
+  return [r.id || t('مسودة'), title, tv(r.engineer)].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, '-');
 }
 
 function buildPrintHTML(r, lang='ar') {
@@ -2979,7 +3003,7 @@ function buildPrintHTML(r, lang='ar') {
       </div>
       <div style="text-align:${end}">
         <div style="font-size:11px;color:#888">${escapeHTML(t('رقم السجل'))}</div>
-        <div style="font-size:22px;font-weight:700;color:#1A1A2E">${escapeHTML(r.id || t('يُحدَّد عند الحفظ'))}</div>
+        <div style="font-size:22px;font-weight:700;color:#1A1A2E;white-space:nowrap">${escapeHTML(r.id || t('يُحدَّد عند الحفظ'))}</div>
         <div style="font-size:11px;color:#888">${escapeHTML(formatStoredDate(r.date))}</div>
       </div>
     </div>
@@ -2988,18 +3012,7 @@ function buildPrintHTML(r, lang='ar') {
       ${escapeHTML(t(form.title))}
     </div>
 
-    <div style="margin-bottom:16px">
-      ${section('بيانات التسليم والاستلام')}
-      <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">
-        ${box('اسم المُسلِّم', escapeHTML(deliveredBy))}
-        ${box(form.to, escapeHTML(tv(r.engineer)), false)}
-        ${box(out ? 'المهندس المرافق' : 'الرقم الوظيفي للمستلم', escapeHTML((out ? r.escort : r.empid) || '—'))}
-        ${box('موقع العمل', escapeHTML(tv(r.location)), false)}
-        ${box('الحالة', escapeHTML(tv(r.status)), false, false)}
-      </div>
-    </div>
-
-    ${printOutsideDetails(r, lang)}
+    ${printParties(r, lang)}
 
     <div style="margin-bottom:16px">
       ${section('التاريخ والتوقيت')}
@@ -3089,7 +3102,7 @@ function printRecord(idx) {
 function doPrint() {
   const html = document.getElementById('print-content').innerHTML, lang = printLang();
   const w = window.open('','_blank','width=750,height=950');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${lang==='en'?'Equipment form':'نموذج الاستلام'}</title>
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHTML(printFileName(PRINT_RECORD || {}, lang))}</title>
   <style>body{margin:1.5cm;direction:${lang==='en'?'ltr':'rtl'}}@media print{@page{margin:1.5cm;size:A4}}</style>
   </head><body>${html}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script></body></html>`);
   w.document.close();
