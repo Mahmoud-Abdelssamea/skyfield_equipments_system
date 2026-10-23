@@ -1317,7 +1317,7 @@ function dbDeviceToLocal(row) {
     calibrationRequired:row.calibration_required,calibrationDate:row.calibration_date,
     calibrationExpiry:row.calibration_expiry,certificateNo:row.certificate_no,
     calibrationLab:row.calibration_lab,certificatePath:row.certificate_path,
-    certificateUrl:row.certificate_url,notes:row.notes
+    certificateUrl:row.certificate_url,notes:row.notes,updatedAt:row.updated_at||''
   });
 }
 
@@ -1340,7 +1340,8 @@ function dbRecordToLocal(row) {
     nat:row.nationality||'',phone:row.phone||'',location:row.location,
     status:row.movement_type,rdate:row.received_date||'',rtime:row.received_time||'',
     ddate:row.delivered_date||'',dtime:row.delivered_time||'',
-    notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[]
+    notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[],
+    updatedAt:row.updated_at||'',createdAt:row.created_at||''
   };
 }
 
@@ -1397,38 +1398,86 @@ function describeDeviceSaveError(error) {
   return text||'تعذر الحفظ في Supabase';
 }
 
-async function saveSingleDeviceToCloud(device,{silent=false}={}) {
+// ── Saves through the database functions ─────────────────────
+// Movements, recipients and devices are written by functions in Supabase that check nothing changed meanwhile.
+const LS_PENDING_MOVEMENTS='sf_pending_movements';
+function getPendingMovements(){try{const v=JSON.parse(localStorage.getItem(LS_PENDING_MOVEMENTS)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+function setPendingMovements(list){try{localStorage.setItem(LS_PENDING_MOVEMENTS,JSON.stringify(list))}catch(e){}}
+function newClientId(){return (crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g,()=>Math.floor(Math.random()*16).toString(16)))}
+function rpcErrorMessage(error){
+  const text=String(error?.message||error||'');const [code,arg]=text.split(':');
+  const m={
+    ACCESS_DENIED:'هذه العملية متاحة للمدير أو أمين المخزن فقط',
+    DEVICE_CHANGED:arg?`الجهاز ${arg} انتقل لشخص آخر منذ فتحت الصفحة. تم تحديث البيانات، راجع وحاول مرة أخرى.`:'أحد الأجهزة تغيّر منذ فتحت الصفحة. تم تحديث البيانات، راجع وحاول مرة أخرى.',
+    ALREADY_WITH_RECIPIENT:'الأجهزة المختارة مسجلة بالفعل باسم المستلم',UNKNOWN_RECIPIENT:'المستلم غير موجود في قائمة المستلمين',
+    DEVICE_NOT_FOUND:`الجهاز ${arg||''} غير موجود`,DUPLICATE_DEVICE:'لا يمكن اختيار الجهاز نفسه أكثر من مرة',
+    MOVEMENT_NOT_LATEST:'لا يمكن ذلك لأن أحد أجهزة هذه الحركة انتقل بعدها في حركة أحدث. عدّل أو احذف الحركة الأحدث أولًا.',
+    MOVEMENT_CHANGED:'عُدّلت هذه الحركة من مستخدم آخر. تم تحديث البيانات، افتحها من جديد.',MOVEMENT_NOT_FOUND:'الحركة غير موجودة (ربما حُذفت). تم تحديث البيانات.',
+    RECIPIENT_HAS_DEVICES:`لا يمكن حذف المستلم لأن معه ${arg||''} جهاز. سجّل استلامها أولًا.`,NAME_EXISTS:'يوجد مستلم بنفس الاسم',NAME_RESERVED:'هذا الاسم محجوز لمدير المخزن',
+    DEVICE_CONFLICT:'عُدّل الجهاز من مستخدم آخر منذ فتحت النافذة. تم تحديث البيانات، افتح الجهاز من جديد.',DEVICE_EXISTS:'رقم الجهاز موجود مسبقاً',
+    DEVICE_WITH_PERSON:'لا يمكن حذف جهاز عند مستخدم',RECIPIENT_REQUIRED:'الرجاء اختيار المستلم',DEVICES_REQUIRED:'الرجاء اختيار جهاز واحد على الأقل'};
+  if(m[code])return m[code];
+  if(/sf_devices_serial_unique|duplicate key/i.test(text))return 'الرقم التسلسلي مستخدم لجهاز آخر';
+  return text||'تعذر الحفظ في Supabase';
+}
+async function callRpc(name,args){
   const client=getSupabaseClient();
-  if(!client){
-    LAST_SUPABASE_ERROR='Supabase غير معدّ';
-    if(!silent)showSyncBadge('Supabase غير معدّ','#856404','#FFF3CD');
-    return false;
+  if(!client)return {error:{message:'Supabase غير معدّ',status:0},transient:true};
+  try{const {data,error,status}=await client.rpc(name,args);if(error)return {error:{...error,status},transient:isTransientSupabaseError({...error,status})};return {data}}
+  catch(error){return {error,transient:true}}
+}
+function applyServerDevices(rows){
+  (rows||[]).forEach(row=>{const d=dbDeviceToLocal(row),i=INVENTORY.findIndex(x=>x.id===d.id);if(i>=0)INVENTORY[i]=d;else INVENTORY.push(d)});
+}
+function upsertLocalRecord(row){
+  const r=dbRecordToLocal(row),i=RECORDS.findIndex(x=>x.id===r.id);if(i>=0)RECORDS[i]=r;else RECORDS.push(r);
+}
+function refreshAfterSave(){saveToStorage();updateRecId();renderInventory();renderDevicesMgmt();renderLog();renderDashboard();renderCalibration();}
+async function sendPendingMovement(item){
+  const res=await callRpc('sf_record_movement',{p_client_id:item.clientId,p_movement:item.payload});
+  if(res.error)return res;
+  applyServerDevices(res.data.devices);upsertLocalRecord(res.data.movement);return res;
+}
+async function retryPendingMovements(silent=true){
+  const list=getPendingMovements();if(!list.length)return true;
+  let allSent=true;
+  for(const item of list){
+    if(item.error)continue;
+    const res=await sendPendingMovement(item);
+    const rest=getPendingMovements();const i=rest.findIndex(x=>x.clientId===item.clientId);
+    if(!res.error){if(i>=0)rest.splice(i,1);setPendingMovements(rest);if(!silent)toast('✅ تم حفظ الحركة '+res.data.movement.record_no);continue}
+    allSent=false;
+    if(res.transient)break;
+    if(i>=0){rest[i].error=rpcErrorMessage(res.error);setPendingMovements(rest)}
   }
+  refreshAfterSave();
+  return allSent;
+}
+function dropPendingMovement(clientId){
+  if(!localizedConfirm('حذف هذه الحركة غير المحفوظة من هذا المتصفح؟'))return;
+  setPendingMovements(getPendingMovements().filter(x=>x.clientId!==clientId));renderLog();
+}
+function formatStoredDate(value){
+  const iso=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:String(value||'');
+}
+
+async function saveSingleDeviceToCloud(device,{silent=false}={}) {
   if(!silent)showSyncBadge('جاري الحفظ...','#856404','#FFF3CD');
-  let lastError=null;
+  let res;
   for(let attempt=1;attempt<=3;attempt++){
-    try{
-      const {data:{session},error:sessionError}=await client.auth.getSession();
-      if(sessionError)throw sessionError;
-      if(!session)throw {code:'AUTH_SESSION_MISSING',message:'No active Supabase session'};
-      const result=await client.from('sf_devices').upsert(localDeviceToDb(device),{onConflict:'device_code'});
-      if(!result.error){
-        setPendingDevice(device.id,false);
-        LAST_SUPABASE_ERROR='';
-        if(!silent)showSyncBadge('✓ محفوظ في Supabase','#155724','#D4EDDA');
-        return true;
-      }
-      lastError={...result.error,status:result.status};
-    }catch(error){
-      lastError=error;
-    }
-    if(!isTransientSupabaseError(lastError)||attempt===3)break;
+    res=await callRpc('sf_save_device',{p_device:localDeviceToDb(device),p_expected_updated_at:device.updatedAt||null});
+    if(!res.error||!res.transient)break;
     await waitForRetry(attempt===1?700:1600);
   }
-  LAST_SUPABASE_ERROR=describeDeviceSaveError(lastError);
-  setPendingDevice(device.id,true);
-  if(!silent)showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
-  console.error('Supabase device save error:',lastError);
+  if(!res.error){
+    applyServerDevices([res.data]);setPendingDevice(device.id,false);LAST_SUPABASE_ERROR='';saveToStorage();
+    if(!silent)showSyncBadge('✓ محفوظ في Supabase','#155724','#D4EDDA');
+    return true;
+  }
+  LAST_SUPABASE_ERROR=res.transient?'تعذر الوصول إلى Supabase بعد 3 محاولات':rpcErrorMessage(res.error);
+  if(res.transient){setPendingDevice(device.id,true);if(!silent)showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');}
+  else{setPendingDevice(device.id,false);if(!silent)showSyncBadge('لم يُحفظ','#721c24','#F8D7DA');}
+  console.error('Supabase device save error:',res.error);
   return false;
 }
 
@@ -1446,6 +1495,7 @@ async function retryPendingDeviceSaves(silent=true) {
 }
 
 async function syncAllData() {
+  await retryPendingMovements(false);
   if(!await retryPendingDeviceSaves(true)){
     showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
     toast('⚠️ '+LAST_SUPABASE_ERROR);
@@ -1461,7 +1511,6 @@ async function syncFromCloud() {
   if(!session){showSyncBadge('يلزم تسجيل الدخول','#856404','#FFF3CD');return false;}
   showSyncBadge('جاري المزامنة...','#856404','#FFF3CD');
   try {
-    const localSnapshot={records:[...RECORDS],inventory:[...INVENTORY],engineers:[...ENGINEERS],locations:[...LOCATIONS]};
     const [movementsResult,devicesResult,engineersResult,locationsResult,profileResult]=await Promise.all([
       client.from('sf_movements').select('*').order('created_at',{ascending:true}),
       client.from('sf_devices').select('*').order('device_code',{ascending:true}),
@@ -1482,30 +1531,13 @@ async function syncFromCloud() {
     }
     CURRENT_ROLE=profile.role||'viewer';
     applyRolePermissions();
-    const remoteEmpty=!movements.length&&!devices.length&&!engineers.length;
-    const localHasData=localSnapshot.records.length||localSnapshot.inventory.length||localSnapshot.engineers.some(e=>e.name!=='مدير المخزن (صالح)');
-    if(remoteEmpty&&localHasData&&canEdit()&&localizedConfirm('قاعدة Supabase فارغة، لكن توجد بيانات محفوظة في هذا المتصفح. هل تريد نقلها الآن إلى Supabase؟')){
-      await migrateLocalSnapshot(localSnapshot);
-      toast('✅ تم نقل البيانات الحالية إلى Supabase');
-      return syncFromCloud();
-    }
     RECORDS=movements.map(dbRecordToLocal);
     INVENTORY=devices.map(dbDeviceToLocal);
-    const repairedDevices=repairLegacyMovementLocations();
     ENGINEERS=engineers.map(row=>({dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||''}));
     if(!ENGINEERS.some(e=>e.name==='مدير المخزن (صالح)')) ENGINEERS.unshift({...DEFAULT_ENGINEERS[0]});
     LOCATIONS=locations.map(row=>row.name).filter(Boolean);
     if(!LOCATIONS.length) LOCATIONS=[...DEFAULT_LOCATIONS];
     saveEngineers();saveLocations();saveToStorage();
-    if(repairedDevices.length&&canEdit()){
-      const repairResult=await client.from('sf_devices').upsert(repairedDevices.map(localDeviceToDb),{onConflict:'device_code'});
-      if(repairResult.error){
-        console.warn('Location repair save failed:',repairResult.error);
-        toast(`تم تصحيح موقع ${repairedDevices.length} جهاز محليًا، وتعذر حفظ التصحيح في Supabase`);
-      }else{
-        toast(`✅ تم تصحيح موقع ${repairedDevices.length} جهاز خارج المستودع`);
-      }
-    }
     refreshEngDropdowns();refreshLocationSelects();renderEngTable();renderLocations();
     updateRecId();renderInventory();renderDevicesMgmt();renderLog();renderDashboard();renderCalibration();
     showSyncBadge('✓ متزامن مع Supabase','#155724','#D4EDDA');
@@ -1518,36 +1550,7 @@ async function syncFromCloud() {
   }
 }
 
-async function migrateLocalSnapshot(snapshot){
-  const client=getSupabaseClient();
-  if(!client)throw new Error('Supabase غير متصل');
-  if(snapshot.records.length)throwIfSupabaseError(await client.from('sf_movements').upsert(snapshot.records.map(localRecordToDb),{onConflict:'record_no'}),'نقل الحركات');
-  if(snapshot.inventory.length)throwIfSupabaseError(await client.from('sf_devices').upsert(snapshot.inventory.map(localDeviceToDb),{onConflict:'device_code'}),'نقل الأجهزة');
-  const engineers=snapshot.engineers.filter(e=>e.name!=='مدير المخزن (صالح)').map(localEngineerToDb);
-  if(engineers.length)throwIfSupabaseError(await client.from('sf_engineers').upsert(engineers,{onConflict:'name'}),'نقل المهندسين');
-  if(snapshot.locations.length)throwIfSupabaseError(await client.from('sf_locations').upsert(snapshot.locations.map(name=>({name})),{onConflict:'name',ignoreDuplicates:true}),'نقل المواقع');
-}
 
-async function pushToCloud(record,deletedId) {
-  const client=getSupabaseClient();
-  if(!client){showSyncBadge('Supabase غير معدّ','#856404','#FFF3CD');return false;}
-  showSyncBadge('جاري الحفظ...','#856404','#FFF3CD');
-  try {
-    if(deletedId) throwIfSupabaseError(await client.from('sf_movements').delete().eq('record_no',deletedId),'حذف السجل');
-    if(record) throwIfSupabaseError(await client.from('sf_movements').upsert(localRecordToDb(record),{onConflict:'record_no'}),'حفظ السجل');
-    if(INVENTORY.length) throwIfSupabaseError(await client.from('sf_devices').upsert(INVENTORY.map(localDeviceToDb),{onConflict:'device_code'}),'حفظ الأجهزة');
-    const engineers=ENGINEERS.filter(e=>e.name!=='مدير المخزن (صالح)').map(localEngineerToDb);
-    if(engineers.length) throwIfSupabaseError(await client.from('sf_engineers').upsert(engineers,{onConflict:'name'}),'حفظ المهندسين');
-    if(LOCATIONS.length) throwIfSupabaseError(await client.from('sf_locations').upsert(LOCATIONS.map(name=>({name})),{onConflict:'name',ignoreDuplicates:true}),'حفظ المواقع');
-    showSyncBadge('✓ محفوظ في Supabase','#155724','#D4EDDA');
-    return true;
-  } catch(e) {
-    showSyncBadge('خطأ في الحفظ','#721c24','#F8D7DA');
-    console.error('Supabase save error:',e);
-    toast('⚠️ '+e.message);
-    return false;
-  }
-}
 
 async function deleteCloudRow(table,column,value) {
   const client=getSupabaseClient();
@@ -1637,7 +1640,7 @@ function normalizeDevice(device) {
     calibrationRequired: d.calibrationRequired === true || String(d.calibrationRequired).toLowerCase() === 'true',
     calibrationDate: d.calibrationDate || '', calibrationExpiry: d.calibrationExpiry || '',
     certificateNo: d.certificateNo || '', calibrationLab: d.calibrationLab || '',
-    certificatePath: d.certificatePath || '', certificateUrl: d.certificateUrl || '', notes: d.notes || ''
+    certificatePath: d.certificatePath || '', certificateUrl: d.certificateUrl || '', notes: d.notes || '', updatedAt: d.updatedAt || ''
   };
 }
 
@@ -1873,7 +1876,7 @@ async function importDeviceUpdates(event){
     const sheetName=wb.SheetNames.includes('الأجهزة والمعايرة')?'الأجهزة والمعايرة':
       (wb.SheetNames.includes('المخزون')?'المخزون':wb.SheetNames[0]);
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:'',raw:true});
-    let updated=0,missing=0,invalid=0;
+    let updated=0,missing=0,invalid=0;const changedDevices=[];
     for(const row of rows){
       const id=String(deviceImportValue(row,['رقم الجهاز','device_code','id'])??'').trim();
       if(!id)continue;
@@ -1900,11 +1903,14 @@ async function importDeviceUpdates(event){
       if(lab!==undefined)device.calibrationLab=String(lab??'').trim();
       if(certUrl!==undefined)device.certificateUrl=String(certUrl??'').trim();
       if(notes!==undefined)device.notes=String(notes??'').trim();
+      changedDevices.push(device);
       updated++;
     }
     if(!updated){toast('لم يتم العثور على أجهزة صالحة للتحديث');return;}
     saveToStorage();
-    const saved=await pushToCloud(null,null);
+    let saved=true;
+    for(const device of changedDevices){if(!await saveSingleDeviceToCloud(device,{silent:true}))saved=false;}
+    if(!saved)toast('⚠️ '+LAST_SUPABASE_ERROR);
     renderDevicesMgmt();renderInventory();renderCalibration();renderDashboard();
     const details=[missing?`${missing} رقم غير موجود`:null,invalid?`${invalid} تاريخ غير صحيح`:null].filter(Boolean).join('، ');
     toast(`${saved?'✅':'⚠️'} تم تحديث ${updated} جهاز${details?' — '+details:''}`);
@@ -2116,8 +2122,10 @@ function prepareMovementDevices(devices) {
 
 // ── Record ID ─────────────────────────────────────────────────
 function updateRecId() {
-  document.getElementById('f-recid').textContent = nextRecordId();
-  document.getElementById('total-lbl').textContent = RECORDS.length+' سجل';
+  // The database gives the record number when the movement is saved, so two people never get the same one.
+  document.getElementById('f-recid').textContent = translateRuntimeText('يُحدَّد عند الحفظ');
+  const pending=getPendingMovements().length;
+  document.getElementById('total-lbl').textContent = RECORDS.length+' سجل'+(pending?` + ${pending} بانتظار الحفظ`:'');
 }
 
 function nextRecordId() {
@@ -2129,7 +2137,7 @@ function nextRecordId() {
 }
 
 function getDate() {
-  return new Date().toLocaleDateString('ar-SA',{year:'numeric',month:'2-digit',day:'2-digit'});
+  return localISODate();
 }
 
 function localISODate(date=new Date()) {
@@ -2147,55 +2155,39 @@ function formatMovementDateTime(date,time) {
 }
 
 // ── Save record ───────────────────────────────────────────────
-function saveRecord() {
+async function saveRecord() {
   if(!requireEditPermission())return;
   const eng = document.getElementById('f-eng').value;
   if(!eng){toast('⚠️ الرجاء اختيار المستلم');return;}
-  let devs = getSelectedDevices();
+  const devs = getSelectedDevices();
   if(!devs.length){toast('⚠️ الرجاء اختيار جهاز واحد على الأقل');return;}
   if(new Set(devs.map(d=>d.id)).size !== devs.length){toast('⚠️ لا يمكن اختيار الجهاز نفسه أكثر من مرة');return;}
   const movementStatus=document.getElementById('f-status').value;
   if(movementStatus==='استلام'&&!document.getElementById('f-rdate').value){toast('⚠️ تاريخ الاستلام مطلوب');return;}
   if(movementStatus==='تسليم'&&!document.getElementById('f-ddate').value){toast('⚠️ تاريخ التسليم مطلوب');return;}
   if(devs.every(d=>(d.holder||WAREHOUSE_HOLDER)===eng)){toast('⚠️ الأجهزة المختارة مسجلة بالفعل باسم المستلم');return;}
-  devs = prepareMovementDevices(devs);
-  const deliveredBy = [...new Set(devs.map(d=>d.previousHolder).filter(Boolean))].join('، ');
-
-  const rec = {
-    id: nextRecordId(),
-    date: getDate(),
-    engineer: eng,
-    deliveredBy,
-    empid: document.getElementById('f-empid').value,
-    nat: document.getElementById('f-nat').value,
-    phone: document.getElementById('f-phone').value,
-    location: document.getElementById('f-loc').value,
-    status: document.getElementById('f-status').value,
-    rdate: document.getElementById('f-rdate').value,
-    rtime: document.getElementById('f-rtime').value,
-    ddate: document.getElementById('f-ddate').value,
-    dtime: document.getElementById('f-dtime').value,
-    notes: document.getElementById('f-notes').value,
-    devices: devs
-  };
-
-  RECORDS.push(rec);
-
-  // Update inventory holder, availability, and actual location
-  devs.forEach(d=>{
-    const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv)applyMovementStateToDevice(inv,rec);
-  });
-
-  saveToStorage();
+  const item={clientId:newClientId(),createdAt:new Date().toISOString(),payload:{
+    engineer:eng,empid:document.getElementById('f-empid').value,nationality:document.getElementById('f-nat').value,
+    phone:document.getElementById('f-phone').value,location:document.getElementById('f-loc').value,movement_type:movementStatus,
+    received_date:document.getElementById('f-rdate').value,received_time:document.getElementById('f-rtime').value,
+    delivered_date:document.getElementById('f-ddate').value,delivered_time:document.getElementById('f-dtime').value,
+    notes:document.getElementById('f-notes').value,
+    // Each device with the holder this form saw: the database refuses if someone moved it meanwhile.
+    devices:devs.map(d=>({id:d.id,expected_holder:d.holder||WAREHOUSE_HOLDER}))}};
   toast('⏳ جاري الحفظ في Supabase...');
-  pushToCloud(rec, null).then(ok=>{
-    toast(ok?'✅ تم حفظ السجل '+rec.id+' في Supabase':'تم الحفظ محليًا وتعذر الاتصال بـ Supabase');
-  });
-  updateRecId();
-  resetForm();
-  renderInventory();
-  renderDashboard();
+  const res=await sendPendingMovement(item);
+  if(!res.error){
+    toast('✅ تم حفظ السجل '+res.data.movement.record_no+' في Supabase');
+    resetForm();refreshAfterSave();return;
+  }
+  if(res.transient){
+    // No connection: keep it here and send it when the connection is back (sending twice is ignored by the database).
+    setPendingMovements([...getPendingMovements(),item]);
+    toast('الحركة محفوظة على هذا الجهاز وستُرسل عند عودة الاتصال');
+    resetForm();refreshAfterSave();return;
+  }
+  toast('⚠️ '+rpcErrorMessage(res.error));
+  if(/DEVICE_CHANGED|ALREADY_WITH_RECIPIENT/.test(String(res.error?.message)))await syncFromCloud();
 }
 
 // ── Reset form ─────────────────────────────────────────────────
@@ -2228,7 +2220,6 @@ function statusBadge(s) {
 
 // ── Render log ─────────────────────────────────────────────────
 function renderLog() {
-  // ensure devices is always array
   RECORDS.forEach(r => {
     if(typeof r.devices === 'string') {
       try { r.devices = JSON.parse(r.devices||'[]'); } catch(e){ r.devices=[]; }
@@ -2242,17 +2233,30 @@ function renderLog() {
     getRecordDeliveredBy(r).toLowerCase().includes(q) ||
     r.devices.some(d=>d.id&&d.id.toLowerCase().includes(q)||d.name&&d.name.toLowerCase().includes(q))
   );
+  // Movements saved on this device while offline, waiting to be sent.
+  const pendingRows=getPendingMovements().filter(p=>!q||[p.payload.engineer,...p.payload.devices.map(d=>d.id)].join(' ').toLowerCase().includes(q)).map(p=>`<tr style="background:#FFF8E6">
+      <td class="rec-num">${escapeHTML(p.error?'لم تُحفظ':'بانتظار الحفظ')}</td>
+      <td>${escapeHTML(formatStoredDate(p.createdAt.slice(0,10)))}</td>
+      <td>—</td>
+      <td style="font-weight:500">${escapeHTML(p.payload.engineer)}</td>
+      <td><div class="devices-cell">${p.payload.devices.map(d=>`<span class="dev-tag">${escapeHTML(d.id)}</span>`).join('')}</div></td>
+      <td>${formatMovementDateTime(p.payload.received_date,p.payload.received_time)}</td>
+      <td>${formatMovementDateTime(p.payload.delivered_date,p.payload.delivered_time)}</td>
+      <td>${escapeHTML(p.payload.location)}</td>
+      <td>${p.error?`<span class="badge b-red" title="${escapeHTML(p.error)}">${escapeHTML(p.error)}</span>`:statusBadge(p.payload.movement_type)}</td>
+      <td class="no-print"><button class="btn-del" onclick="dropPendingMovement('${escapeHTML(p.clientId)}')">حذف</button></td>
+    </tr>`).join('');
   const tbody = document.getElementById('log-tbody');
-  if(!filtered.length){
+  if(!filtered.length&&!pendingRows){
     tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">لا توجد سجلات${q?' تطابق البحث':''}</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map((r,idx)=>{
+  tbody.innerHTML = pendingRows + filtered.map((r,idx)=>{
     const realIdx = RECORDS.indexOf(r);
     const devTags = r.devices.map(d=>`<span class="dev-tag">${escapeHTML(d.id)}</span>`).join('');
     return `<tr>
       <td class="rec-num">${escapeHTML(r.id)}</td>
-      <td>${escapeHTML(r.date)}</td>
+      <td>${escapeHTML(formatStoredDate(r.date))}</td>
       <td style="font-weight:500">${escapeHTML(getRecordDeliveredBy(r)||'—')}</td>
       <td style="font-weight:500">${escapeHTML(r.engineer)}</td>
       <td><div class="devices-cell">${devTags}</div></td>
@@ -2272,20 +2276,15 @@ function renderLog() {
 }
 
 // ── Quick delete ───────────────────────────────────────────────
-function quickDelete(idx) {
+async function quickDelete(idx) {
   if(!requireEditPermission())return;
-  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+RECORDS[idx].id+'؟')) return;
-  // revert inventory
-  RECORDS[idx].devices.forEach(d=>{
-    const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){ inv.holder=WAREHOUSE_HOLDER; inv.status='متاح'; inv.location=WAREHOUSE_LOCATION; }
-  });
-  const _delId = RECORDS[idx].id;
-  RECORDS.splice(idx,1);
-  saveToStorage();
-  pushToCloud(null, _delId);
+  const rec=RECORDS[idx];if(!rec)return;
+  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+rec.id+'؟ ستعود أجهزته إلى حالتها قبل هذه الحركة.')) return;
+  const res=await callRpc('sf_delete_movement',{p_record_no:rec.id,p_expected_updated_at:rec.updatedAt||null});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحذف السجل':rpcErrorMessage(res.error)));if(!res.transient)await syncFromCloud();return;}
+  applyServerDevices(res.data.devices);RECORDS=RECORDS.filter(r=>r.id!==rec.id);
   toast('🗑 تم حذف السجل');
-  updateRecId(); renderLog(); renderInventory(); renderDashboard();
+  refreshAfterSave();
 }
 
 // ── Edit modal ─────────────────────────────────────────────────
@@ -2311,58 +2310,33 @@ function openEdit(idx) {
 
 function closeEdit() { document.getElementById('edit-modal').classList.remove('open'); editIdx=null; }
 
-function saveEdit() {
+async function saveEdit() {
   if(!requireEditPermission())return;
   if(editIdx===null) return;
   const r = RECORDS[editIdx];
-  const newEng = document.getElementById('e-eng').value;
-
-  // If engineer changed, update inventory holders
-  if(newEng !== r.engineer) {
-    r.devices.forEach(d=>{
-      const inv = INVENTORY.find(x=>x.id===d.id);
-      if(inv) inv.holder = newEng;
-    });
-  }
-
-  r.engineer = newEng;
-  r.empid = document.getElementById('e-empid').value;
-  r.rdate = document.getElementById('e-rdate').value;
-  r.rtime = document.getElementById('e-rtime').value;
-  r.ddate = document.getElementById('e-ddate').value;
-  r.dtime = document.getElementById('e-dtime').value;
-  r.location = document.getElementById('e-loc').value;
-  r.status = document.getElementById('e-status').value;
-  r.notes = document.getElementById('e-notes').value;
-
-  // Update inventory holder, availability, and actual location
-  r.devices.forEach(d=>{
-    const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv)applyMovementStateToDevice(inv,r);
-  });
-
+  const changes={engineer:document.getElementById('e-eng').value,empid:document.getElementById('e-empid').value,
+    received_date:document.getElementById('e-rdate').value,received_time:document.getElementById('e-rtime').value,
+    delivered_date:document.getElementById('e-ddate').value,delivered_time:document.getElementById('e-dtime').value,
+    location:document.getElementById('e-loc').value,movement_type:document.getElementById('e-status').value,notes:document.getElementById('e-notes').value};
+  // Notes, dates and times can always change; the recipient or location only on the latest movement of its devices.
+  const res=await callRpc('sf_update_movement',{p_record_no:r.id,p_changes:changes,p_expected_updated_at:r.updatedAt||null});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم تُحفظ التعديلات':rpcErrorMessage(res.error)));if(!res.transient&&!/MOVEMENT_NOT_LATEST/.test(String(res.error?.message))){closeEdit();await syncFromCloud();}return;}
+  applyServerDevices(res.data.devices);upsertLocalRecord(res.data.movement);
   closeEdit();
-  saveToStorage();
-  pushToCloud(r,null);
   toast('✅ تم حفظ التعديلات على '+r.id);
-  renderLog(); renderInventory(); renderDashboard();
+  refreshAfterSave();
 }
 
-function deleteRecord() {
+async function deleteRecord() {
   if(!requireEditPermission())return;
   if(editIdx===null) return;
-  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+RECORDS[editIdx].id+'؟')) return;
-  RECORDS[editIdx].devices.forEach(d=>{
-    const inv = INVENTORY.find(x=>x.id===d.id);
-    if(inv){ inv.holder=WAREHOUSE_HOLDER; inv.status='متاح'; inv.location=WAREHOUSE_LOCATION; }
-  });
-  const _mDelId = RECORDS[editIdx].id;
-  RECORDS.splice(editIdx,1);
-  saveToStorage();
-  pushToCloud(null, _mDelId);
+  const rec=RECORDS[editIdx];if(!rec)return;
+  if(!localizedConfirm('هل أنت متأكد من حذف السجل '+rec.id+'؟ ستعود أجهزته إلى حالتها قبل هذه الحركة.')) return;
+  const res=await callRpc('sf_delete_movement',{p_record_no:rec.id,p_expected_updated_at:rec.updatedAt||null});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحذف السجل':rpcErrorMessage(res.error)));if(!res.transient)await syncFromCloud();return;}
+  applyServerDevices(res.data.devices);RECORDS=RECORDS.filter(r=>r.id!==rec.id);
   toast('🗑 تم حذف السجل');
-  closeEdit();
-  updateRecId(); renderLog(); renderInventory(); renderDashboard();
+  closeEdit();refreshAfterSave();
 }
 
 // ── Print helpers ──────────────────────────────────────────────
@@ -2391,7 +2365,7 @@ function buildPrintHTML(r) {
       <div style="text-align:left">
         <div style="font-size:11px;color:#888">رقم السجل</div>
         <div style="font-size:22px;font-weight:700;color:#1A1A2E">${escapeHTML(r.id)}</div>
-        <div style="font-size:11px;color:#888">${escapeHTML(r.date)}</div>
+        <div style="font-size:11px;color:#888">${escapeHTML(formatStoredDate(r.date))}</div>
       </div>
     </div>
 
@@ -2672,28 +2646,17 @@ async function saveEng() {
   if(!requireEditPermission())return;
   const name = document.getElementById('em-name').value.trim();
   if(!name){toast('الاسم مطلوب');return;}
-  const eng = {
-    name,
-    empid: document.getElementById('em-empid').value.trim(),
-    nat:   document.getElementById('em-nat').value.trim(),
-    iqama: document.getElementById('em-iqama').value.trim(),
-    phone: document.getElementById('em-phone').value.trim()
-  };
-  const oldName=engEditIdx!==null?ENGINEERS[engEditIdx].name:'';
-  if(engEditIdx !== null) {
-    ENGINEERS[engEditIdx] = eng;
-    toast('تم تعديل بيانات ' + name);
-  } else {
-    if(ENGINEERS.find(e=>e.name===name)){toast('المستلم موجود مسبقاً');return;}
-    ENGINEERS.push(eng);
-    toast('تم إضافة المستلم ' + name);
-  }
-  saveEngineers();
-  refreshEngDropdowns();
-  closeEngModal();
-  renderEngTable();
-  if(oldName&&oldName!==name&&oldName!=='مدير المخزن (صالح)')await deleteCloudRow('sf_engineers','name',oldName);
-  await pushToCloud(null,null);
+  const current=engEditIdx!==null?ENGINEERS[engEditIdx]:null;
+  if(current&&current.name==='مدير المخزن (صالح)'&&!current.dbId){toast('لا يمكن تعديل مدير المخزن الافتراضي');return;}
+  const payload={name,empid:document.getElementById('em-empid').value.trim(),nationality:document.getElementById('em-nat').value.trim(),
+    iqama:document.getElementById('em-iqama').value.trim(),phone:document.getElementById('em-phone').value.trim()};
+  // A rename is carried by the database to the devices this person holds and to the movement history.
+  const res=await callRpc('sf_save_engineer',{p_id:current?.dbId||null,p_engineer:payload});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحفظ المستلم':rpcErrorMessage(res.error)));return;}
+  const row=res.data,eng={dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||''};
+  if(current){ENGINEERS[engEditIdx]=eng;toast('تم تعديل بيانات ' + name);}else{ENGINEERS.push(eng);toast('تم إضافة المستلم ' + name);}
+  saveEngineers();refreshEngDropdowns();closeEngModal();renderEngTable();
+  if(current&&current.name!==name)await syncFromCloud();
 }
 
 async function deleteEng(idx) {
@@ -2701,12 +2664,13 @@ async function deleteEng(idx) {
   const e = ENGINEERS[idx];
   if(e.name==='مدير المخزن (صالح)'){toast('لا يمكن حذف مدير المخزن الافتراضي');return;}
   if(!localizedConfirm('حذف المستلم: ' + e.name + '؟')) return;
+  if(e.dbId){
+    const res=await callRpc('sf_delete_engineer',{p_id:e.dbId});
+    if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحذف المستلم':rpcErrorMessage(res.error)));return;}
+  }
   ENGINEERS.splice(idx,1);
-  saveEngineers();
-  refreshEngDropdowns();
-  renderEngTable();
+  saveEngineers();refreshEngDropdowns();renderEngTable();
   toast('تم حذف المستلم ' + e.name);
-  await deleteCloudRow('sf_engineers','name',e.name);
 }
 
 // ── Settings: Locations ────────────────────────────────────────
@@ -2747,19 +2711,19 @@ function renderLocations() {
     </div>`).join('');
 }
 
-function addLocation() {
+async function addLocation() {
   if(!requireEditPermission())return;
   const input = document.getElementById('new-location-input');
   const name = input.value.trim();
   if(!name){toast('أدخل اسم الموقع');return;}
   if(LOCATIONS.includes(name)){toast('الموقع موجود مسبقاً');return;}
+  const client=getSupabaseClient();
+  const result=client?await client.from('sf_locations').insert({name}):{error:{message:'Supabase غير معدّ'}};
+  if(result.error&&result.error.code!=='23505'){toast('⚠️ تعذر حفظ الموقع: '+result.error.message);return;}
   LOCATIONS.push(name);
-  saveLocations();
-  refreshLocationSelects();
-  renderLocations();
+  saveLocations();refreshLocationSelects();renderLocations();
   input.value = '';
   toast('تم إضافة الموقع: ' + name);
-  pushToCloud(null, null);
 }
 
 async function deleteLocation(idx) {
@@ -2795,6 +2759,7 @@ async function doLogin() {
   errorEl.textContent='';
   document.getElementById('login-screen').classList.add('hidden');
   toast('✅ تم تسجيل الدخول');
+  await retryPendingMovements(true);
   if(!await retryPendingDeviceSaves(true)){
     showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
     toast('⚠️ '+LAST_SUPABASE_ERROR);
@@ -2817,6 +2782,7 @@ async function initializeAuth(){
   if(error){setLoginVisible(true,'تعذر قراءة جلسة الدخول');return;}
   setLoginVisible(!session);
   if(session){
+    await retryPendingMovements(true);
     if(await retryPendingDeviceSaves(true))await syncFromCloud();
     else showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
   }
@@ -2828,15 +2794,15 @@ async function initializeAuth(){
 
 // Copies of company data kept in this browser; removed on sign-out so they do not stay on a shared computer.
 function clearLocalData(){
-  [LS_RECORDS,LS_INVENTORY,LS_ENGINEERS,LS_LOCATIONS,LS_PENDING_DEVICES].forEach(key=>{try{localStorage.removeItem(key)}catch(e){}});
+  [LS_RECORDS,LS_INVENTORY,LS_ENGINEERS,LS_LOCATIONS,LS_PENDING_DEVICES,LS_PENDING_MOVEMENTS].forEach(key=>{try{localStorage.removeItem(key)}catch(e){}});
   RECORDS=[];INVENTORY=[];ENGINEERS=[{...DEFAULT_ENGINEERS[0]}];LOCATIONS=[...DEFAULT_LOCATIONS];
 }
 function renderAfterClear(){
   try{refreshEngDropdowns();refreshLocationSelects();renderEngTable();renderLocations();updateRecId();renderInventory();renderDevicesMgmt();renderLog();renderDashboard();renderCalibration();}catch(e){console.warn(e)}
 }
 async function logout() {
-  const pending=getPendingDeviceIds().length;
-  if(pending&&!localizedConfirm(`يوجد ${pending} جهاز لم يُحفظ في Supabase بعد وسيُحذف من هذا المتصفح عند الخروج. هل تريد الخروج؟`))return;
+  const pending=getPendingDeviceIds().length+getPendingMovements().length;
+  if(pending&&!localizedConfirm(`يوجد ${pending} عنصر (أجهزة أو حركات) لم يُحفظ في Supabase بعد وسيُحذف من هذا المتصفح عند الخروج. هل تريد الخروج؟`))return;
   const client=getSupabaseClient();
   if(client)await client.auth.signOut();
   clearLocalData();renderAfterClear();
@@ -3128,20 +3094,17 @@ async function saveDevice() {
     }catch(e){toast('⚠️ '+e.message);return;}
   }
 
-  if(deviceEditIdx !== null) {
-    newDevice.holder = INVENTORY[deviceEditIdx].holder;
-    INVENTORY[deviceEditIdx] = newDevice;
-  } else {
-    INVENTORY.push(newDevice);
-  }
+  if(deviceEditIdx !== null) newDevice.holder = INVENTORY[deviceEditIdx].holder;
 
-  saveToStorage();
-  setPendingDevice(id,true);
+  newDevice.updatedAt=previousDevice?.updatedAt||'';
   const saved=await saveSingleDeviceToCloud(newDevice);
+  if(!saved&&!getPendingDeviceIds().includes(id)){toast('⚠️ '+LAST_SUPABASE_ERROR);if(/DEVICE_CONFLICT/.test(LAST_SUPABASE_ERROR)||LAST_SUPABASE_ERROR.includes('مستخدم آخر'))await syncFromCloud();return;}
   if(saved){
     toast(deviceEditIdx!==null?'✅ تم تعديل الجهاز '+id+' وحفظه في Supabase':'✅ تم إضافة الجهاز '+id+' وحفظه في Supabase');
   }else{
-    toast('⚠️ تم الحفظ محليًا: '+LAST_SUPABASE_ERROR);
+    // No connection: keep it here and retry later.
+    if(deviceEditIdx!==null)INVENTORY[deviceEditIdx]=newDevice;else INVENTORY.push(newDevice);
+    saveToStorage();toast('⚠️ تم الحفظ محليًا: '+LAST_SUPABASE_ERROR);
   }
   closeDeviceModal();
   renderDevicesMgmt();
@@ -3155,22 +3118,20 @@ async function deleteDevice(idx) {
   const d = INVENTORY[idx];
   if(d.status === 'غير متاح'){toast('لا يمكن حذف جهاز عند مستخدم');return;}
   if(!localizedConfirm('هل أنت متأكد من حذف الجهاز ' + d.id + '?')) return;
-  INVENTORY.splice(idx,1);
+  const res=await callRpc('sf_delete_device',{p_code:d.id});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحذف الجهاز':rpcErrorMessage(res.error)));return;}
+  INVENTORY=INVENTORY.filter(x=>x.id!==d.id);
   saveToStorage();
-  await deleteCloudRow('sf_devices','device_code',d.id);
   if(d.certificatePath){const client=getSupabaseClient();if(client)await client.storage.from('equipment-documents').remove([d.certificatePath]);}
   toast('تم حذف الجهاز ' + d.id);
-  renderDevicesMgmt();
-  renderInventory();
-  renderCalibration();
-  renderDashboard();
+  renderDevicesMgmt();renderInventory();renderCalibration();renderDashboard();
 }
 
 document.addEventListener('click', function(e){
   if(e.target===document.getElementById('device-modal')) closeDeviceModal();
 });
 
-window.addEventListener('online',()=>retryPendingDeviceSaves(false));
+window.addEventListener('online',()=>{retryPendingMovements(false).then(()=>retryPendingDeviceSaves(false))});
 
 applyLanguage();
 languageObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
