@@ -110,6 +110,9 @@ select{cursor:pointer}
 .b-teal{background:var(--teal);color:var(--teal-t)}
 .b-orange{background:#FDE8D7;color:#9a4a07}
 .cell-sub{font-size:11.5px;font-weight:400;color:var(--muted);margin-top:3px}
+.eng-actions{display:flex;flex-wrap:wrap;gap:6px;min-width:250px}
+.eng-actions button{white-space:nowrap}
+#eng-table th:first-child,#eng-table td:first-child{min-width:150px}
 .print-lang{display:inline-flex;gap:4px;margin-inline-start:auto;margin-inline-end:12px}
 .print-lang button{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:14px;padding:3px 12px;font:inherit;font-size:12px;cursor:pointer}
 .print-lang button.active{background:#fff;color:#0F3460;font-weight:700}
@@ -402,6 +405,7 @@ html{scroll-behavior:smooth}
     <div class="kpi-card" style="--kpi:#E94560"><div class="kpi-label">في المواقع</div><div class="kpi-value" id="kpi-assigned">0</div><div class="kpi-hint">بعهدة مهندس أو مشروع</div></div>
     <div class="kpi-card" style="--kpi:#E8610A"><div class="kpi-label">مؤجرة</div><div class="kpi-value" id="kpi-rented">0</div><div class="kpi-hint">عند عملاء</div></div>
     <div class="kpi-card" style="--kpi:#6f42c1"><div class="kpi-label">في الصيانة</div><div class="kpi-value" id="kpi-maintenance">0</div><div class="kpi-hint">صيانة أو معايرة خارجية</div></div>
+    <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">وثائق قريبة الانتهاء</div><div class="kpi-value" id="kpi-documents">0</div><div class="kpi-hint">إقامة أو SEC-ID خلال 60 يومًا</div></div>
     <div class="kpi-card" style="--kpi:#856404"><div class="kpi-label">معايرة قريبة</div><div class="kpi-value" id="kpi-due">0</div><div class="kpi-hint">خلال 60 يومًا</div></div>
     <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">معايرة منتهية</div><div class="kpi-value" id="kpi-expired">0</div><div class="kpi-hint">تحتاج إجراء فوري</div></div>
   </div>
@@ -414,6 +418,10 @@ html{scroll-behavior:smooth}
     <div class="card">
       <div class="card-header">🔁 الإيجار والصيانة <span class="section-subtitle">المتأخر أولًا</span></div>
       <div class="card-body"><div class="alert-list" id="dashboard-outside"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">🪪 الإقامة وبطاقة SEC-ID <span class="section-subtitle">الأقرب انتهاءً أولًا</span></div>
+      <div class="card-body"><div class="alert-list" id="dashboard-documents"></div></div>
     </div>
     <div class="card">
       <div class="card-header">⚡ إجراءات سريعة</div>
@@ -824,13 +832,18 @@ html{scroll-behavior:smooth}
     <div class="card-body">
       <div class="btn-row" style="justify-content:flex-start;margin-bottom:16px">
         <button class="btn btn-save" onclick="openEngModal()">➕ إضافة مستلم</button>
+        <select id="eng-doc-filter" aria-label="تصفية حسب الإقامة وبطاقة SEC-ID" onchange="renderEngTable()" style="max-width:240px">
+          <option value="all">كل المستلمين</option>
+          <option value="due">إقامة أو SEC-ID قريبة الانتهاء أو منتهية</option>
+          <option value="expired">منتهية فقط</option>
+        </select>
       </div>
       <div style="overflow-x:auto">
         <table class="inv-table" id="eng-table">
           <thead>
             <tr>
               <th>الاسم</th><th>الرقم الوظيفي</th><th>الجنسية</th>
-              <th>رقم الإقامة</th><th>التليفون</th><th class="no-print">إجراءات</th>
+              <th>رقم الإقامة</th><th>بطاقة SEC-ID</th><th>التليفون</th><th class="no-print">إجراءات</th>
             </tr>
           </thead>
           <tbody id="eng-tbody"></tbody>
@@ -881,6 +894,22 @@ html{scroll-behavior:smooth}
         <div class="field">
           <label for="em-phone">رقم التليفون</label>
           <input id="em-phone" placeholder="05xxxxxxxx">
+        </div>
+        <div class="field">
+          <label for="em-job">الوظيفة</label>
+          <select id="em-job"><option value="">—</option><option value="مهندس">مهندس</option><option value="فني">فني</option></select>
+        </div>
+        <div class="field">
+          <label for="em-iqama-expiry">تاريخ انتهاء الإقامة</label>
+          <input type="date" id="em-iqama-expiry">
+        </div>
+        <div class="field">
+          <label for="em-sec-no">رقم بطاقة SEC-ID</label>
+          <input id="em-sec-no" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="em-sec-expiry">تاريخ انتهاء بطاقة SEC-ID</label>
+          <input type="date" id="em-sec-expiry">
         </div>
       </div>
     </div>
@@ -1268,6 +1297,34 @@ const AR_TO_EN=Object.freeze({
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
   "نسيت كلمة المرور؟":"Forgot password?",
+  "الوظيفة":"Job title",
+  "فني":"Technician",
+  "تاريخ انتهاء الإقامة":"Iqama expiry date",
+  "رقم بطاقة SEC-ID":"SEC-ID card number",
+  "تاريخ انتهاء بطاقة SEC-ID":"SEC-ID card expiry date",
+  "بطاقة SEC-ID":"SEC-ID card",
+  "الإقامة":"Iqama",
+  "تجديد الإقامة":"Renew Iqama",
+  "تجديد SEC-ID":"Renew SEC-ID",
+  "سُلّمت البطاقة":"Card handed in",
+  "غير مسجل":"Not recorded",
+  "كل المستلمين":"All recipients",
+  "إقامة أو SEC-ID قريبة الانتهاء أو منتهية":"Iqama or SEC-ID due or expired",
+  "منتهية فقط":"Expired only",
+  "تصفية حسب الإقامة وبطاقة SEC-ID":"Filter by Iqama and SEC-ID",
+  "لا يوجد مستلمون مطابقون":"No matching recipients",
+  "وثائق قريبة الانتهاء":"Documents due",
+  "إقامة أو SEC-ID خلال 60 يومًا":"Iqama or SEC-ID within 60 days",
+  "🪪 الإقامة وبطاقة SEC-ID":"🪪 Iqama and SEC-ID card",
+  "الإقامة وبطاقة SEC-ID":"Iqama and SEC-ID card",
+  "الأقرب انتهاءً أولًا":"Soonest first",
+  "لا توجد إقامة أو بطاقة SEC-ID قريبة الانتهاء":"No Iqama or SEC-ID card is due",
+  "اكتب التاريخ بصيغة YYYY-MM-DD":"Enter the date as YYYY-MM-DD",
+  "التاريخ الجديد يجب أن يكون بعد تاريخ الانتهاء الحالي":"The new date must be after the current expiry date",
+  "تاريخ التسليم لا يكون في المستقبل":"The hand-in date cannot be in the future",
+  "لا توجد بطاقة SEC-ID مسجلة لهذا المستلم":"No SEC-ID card is recorded for this recipient",
+  "إجراء غير معروف":"Unknown action",
+  "الوظيفة: مهندس أو فني":"Job title: Engineer or Technician",
   "نوع الحركة":"Movement type",
   "مهندس / المستودع":"Engineer / warehouse",
   "تأجير لعميل":"Rental to a client",
@@ -1435,6 +1492,14 @@ function translateRuntimeText(value){
     [/^يرجع خلال يوم واحد$/,()=>`Due back in 1 day`],
     [/^يرجع خلال يومان$/,()=>`Due back in 2 days`],
     [/^متوقع: (.+)$/,(_,d)=>`Expected: ${d}`],
+    [/^سُلّمت (.+)$/,(_,d)=>`Handed in ${d}`],
+    [/^سارية حتى (.+)$/,(_,d)=>`Valid until ${d}`],
+    [/^تاريخ انتهاء الإقامة الجديد — (.+) \(YYYY-MM-DD\):$/,(_,n)=>`New Iqama expiry date — ${n} (YYYY-MM-DD):`],
+    [/^تاريخ انتهاء بطاقة SEC-ID الجديدة — (.+) \(YYYY-MM-DD\):$/,(_,n)=>`New SEC-ID card expiry date — ${n} (YYYY-MM-DD):`],
+    [/^تاريخ تسليم بطاقة SEC-ID لشركة الكهرباء — (.+) \(YYYY-MM-DD\):$/,(_,n)=>`Date the SEC-ID card was handed back to the electricity company — ${n} (YYYY-MM-DD):`],
+    [/^تم حفظ تاريخ الإقامة — (.+)$/,(_,n)=>`Iqama date saved — ${n}`],
+    [/^تم حفظ تاريخ بطاقة SEC-ID — (.+)$/,(_,n)=>`SEC-ID card date saved — ${n}`],
+    [/^تنبيه: (.+) لـ (.+) منتهية\. هل تريد المتابعة وتسليم الأجهزة؟$/,(_,docs,n)=>`Warning: ${docs.replace('الإقامة','Iqama').replace('بطاقة SEC-ID','SEC-ID card').replace(' و',' and ')} of ${n} expired. Continue and hand over the devices?`],
     [/^رجع (.+) من الصيانة\. هل تريد تحديث تاريخ المعايرة ورفع الشهادة الآن؟$/,(_,ids)=>`${ids} came back from maintenance. Update the calibration date and upload the certificate now?`],
     [/^متبقي يومان$/,()=>`2 days remaining`],
     [/^منتهية منذ (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`Expired ${n} days ago`],
@@ -1651,6 +1716,11 @@ function localRecordToDb(record) {
   };
 }
 
+function dbEngineerToLocal(row) {
+  return {dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||'',
+    job:row.job_title||'',iqamaExpiry:row.iqama_expiry||'',secIdNo:row.sec_id_no||'',secIdExpiry:row.sec_id_expiry||'',secIdReturnedOn:row.sec_id_returned_on||''};
+}
+
 function localEngineerToDb(engineer) {
   return {name:engineer.name,empid:engineer.empid||null,nationality:engineer.nat||null,
     iqama:engineer.iqama||null,phone:engineer.phone||null,updated_at:new Date().toISOString()};
@@ -1711,7 +1781,10 @@ function rpcErrorMessage(error){
     DEVICE_CONFLICT:'عُدّل الجهاز من مستخدم آخر منذ فتحت النافذة. تم تحديث البيانات، افتح الجهاز من جديد.',DEVICE_EXISTS:'رقم الجهاز موجود مسبقاً',
     DEVICE_WITH_PERSON:'لا يمكن حذف جهاز عند مستخدم',RECIPIENT_REQUIRED:'الرجاء اختيار المستلم',DEVICES_REQUIRED:'الرجاء اختيار جهاز واحد على الأقل',
     PARTY_REQUIRED:'اكتب اسم العميل أو الجهة',PARTY_IS_RECIPIENT:'هذا الاسم في قائمة المستلمين؛ اختر نوع الحركة «مهندس»',
-    EXPECTED_RETURN_REQUIRED:'تاريخ الرجوع المتوقع مطلوب',ID_NUMBER_REQUIRED:'رقم الإقامة أو الهوية مطلوب للتأجير',INVALID_DESTINATION:'نوع الحركة غير معروف'};
+    EXPECTED_RETURN_REQUIRED:'تاريخ الرجوع المتوقع مطلوب',ID_NUMBER_REQUIRED:'رقم الإقامة أو الهوية مطلوب للتأجير',INVALID_DESTINATION:'نوع الحركة غير معروف',
+    NEW_DATE_NOT_LATER:'التاريخ الجديد يجب أن يكون بعد تاريخ الانتهاء الحالي',DATE_REQUIRED:'اكتب التاريخ بصيغة YYYY-MM-DD',
+    DATE_IN_FUTURE:'تاريخ التسليم لا يكون في المستقبل',NO_SEC_ID:'لا توجد بطاقة SEC-ID مسجلة لهذا المستلم',
+    INVALID_DOCUMENT_ACTION:'إجراء غير معروف',INVALID_JOB_TITLE:'الوظيفة: مهندس أو فني'};
   if(m[code])return m[code];
   if(/sf_devices_serial_unique|duplicate key/i.test(text))return 'الرقم التسلسلي مستخدم لجهاز آخر';
   return text||'تعذر الحفظ في Supabase';
@@ -1829,7 +1902,7 @@ async function syncFromCloud() {
     applyRolePermissions();
     RECORDS=movements.map(dbRecordToLocal);
     INVENTORY=devices.map(dbDeviceToLocal);
-    ENGINEERS=engineers.map(row=>({dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||''}));
+    ENGINEERS=engineers.map(dbEngineerToLocal);
     if(!ENGINEERS.some(e=>e.name==='مدير المخزن (صالح)')) ENGINEERS.unshift({...DEFAULT_ENGINEERS[0]});
     LOCATIONS=locations.map(row=>row.name).filter(Boolean);
     if(!LOCATIONS.length) LOCATIONS=[...DEFAULT_LOCATIONS];
@@ -1999,6 +2072,46 @@ function calibrationState(device) {
   return {key:'valid',label:'سارية',badge:'b-green',days,color:'#155724'};
 }
 
+// ── Iqama and SEC-ID cards: same 60 / 30 / 7-day warnings as calibration ──
+function documentState(expiry, returnedOn) {
+  if(returnedOn) return {key:'returned', badge:'b-gray', days:null, color:'#777'};
+  if(!expiry) return {key:'missing', badge:'b-gray', days:null, color:'#777'};
+  const days = daysUntil(expiry);
+  if(days < 0) return {key:'expired', badge:'b-red', days, color:'#b02a37'};
+  if(days <= 7) return {key:'critical', badge:'b-red', days, color:'#b02a37'};
+  if(days <= 30) return {key:'urgent', badge:'b-amber', days, color:'#856404'};
+  if(days <= 60) return {key:'soon', badge:'b-teal', days, color:'#0c5460'};
+  return {key:'valid', badge:'b-green', days, color:'#155724'};
+}
+function documentText(state, expiry, returnedOn) {
+  if(state.key === 'returned') return `سُلّمت ${formatStoredDate(returnedOn)}`;
+  if(state.key === 'missing') return 'غير مسجل';
+  if(state.key === 'valid') return `سارية حتى ${formatStoredDate(expiry)}`;
+  return calibrationDaysText(state.days);
+}
+function documentBadge(expiry, returnedOn) {
+  const state = documentState(expiry, returnedOn);
+  return `<span class="badge ${state.badge}" title="${escapeHTML(expiry ? formatStoredDate(expiry) : '')}">${escapeHTML(translateRuntimeText(documentText(state, expiry, returnedOn)))}</span>`;
+}
+// Every Iqama / SEC-ID that is expired or due within 60 days, soonest first.
+function documentAlerts() {
+  const alerts = [];
+  ENGINEERS.filter(e => e.name !== WAREHOUSE_HOLDER).forEach((e, index) => {
+    [['iqama', 'الإقامة', e.iqamaExpiry, ''], ['sec_id', 'SEC-ID', e.secIdExpiry, e.secIdReturnedOn]].forEach(([doc, label, expiry, returned]) => {
+      const state = documentState(expiry, returned);
+      if(['expired','critical','urgent','soon'].includes(state.key)) alerts.push({engineer:e, index:ENGINEERS.indexOf(e), doc, label, expiry, state});
+    });
+  });
+  return alerts.sort((a,b) => a.state.days - b.state.days);
+}
+// Warning before assigning devices to someone whose Iqama or SEC-ID has expired (the user can still go on).
+function expiredDocumentsOf(name) {
+  const e = ENGINEERS.find(x => x.name === name);
+  if(!e || name === WAREHOUSE_HOLDER) return [];
+  return [['الإقامة', e.iqamaExpiry, ''], ['بطاقة SEC-ID', e.secIdExpiry, e.secIdReturnedOn]]
+    .filter(([, expiry, returned]) => documentState(expiry, returned).key === 'expired').map(([label]) => label);
+}
+
 function calibrationDaysText(days) {
   if(days === 0) return 'تنتهي اليوم';
   return days < 0 ? `منتهية منذ ${arDays(days)}` : `متبقي ${arDays(days)}`;
@@ -2068,8 +2181,10 @@ function renderDashboard() {
   const states = INVENTORY.map(d=>calibrationState(d));
   const due = states.filter(s=>['critical','urgent','soon'].includes(s.key)).length;
   const expired = states.filter(s=>s.key==='expired').length;
-  const values = {total,available,assigned,rented,maintenance,due,expired};
+  const docAlerts = documentAlerts();
+  const values = {total,available,assigned,rented,maintenance,documents:docAlerts.length,due,expired};
   renderOutsideDevices();
+  renderDocumentAlerts(docAlerts);
   Object.entries(values).forEach(([key,value])=>{ const el=document.getElementById('kpi-'+key); if(el) el.textContent=value; });
 
   const dateEl = document.getElementById('dashboard-date');
@@ -2125,6 +2240,16 @@ function renderOutsideDevices() {
       <div class="alert-sub">${escapeHTML(sub)}</div></div>
       <span class="alert-days">${escapeHTML(translateRuntimeText(outsideDaysText(days)))}</span></div>`;
   }).join('');
+}
+
+function renderDocumentAlerts(alerts) {
+  const el = document.getElementById('dashboard-documents');
+  if(!el) return;
+  if(!alerts.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div>${escapeHTML(translateRuntimeText('لا توجد إقامة أو بطاقة SEC-ID قريبة الانتهاء'))}</div></div>`; return; }
+  el.innerHTML = alerts.slice(0,8).map(({engineer,label,expiry,state}) => `<div class="alert-row" style="--alert:${state.color}">
+      <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(engineer.name)} — ${escapeHTML(translateRuntimeText(label))}</div>
+      <div class="alert-sub">${escapeHTML([engineer.job && translateRuntimeText(engineer.job), formatStoredDate(expiry), engineer.phone].filter(Boolean).join(' · '))}</div></div>
+      <span class="alert-days">${escapeHTML(translateRuntimeText(calibrationDaysText(state.days)))}</span></div>`).join('');
 }
 
 function renderCalibration() {
@@ -2545,6 +2670,10 @@ async function saveRecord() {
   const devs = getSelectedDevices();
   if(!devs.length){toast('⚠️ الرجاء اختيار جهاز واحد على الأقل');return;}
   if(new Set(devs.map(d=>d.id)).size !== devs.length){toast('⚠️ لا يمكن اختيار الجهاز نفسه أكثر من مرة');return;}
+  // Expired Iqama / SEC-ID of the recipient (or the escort): warn, the user decides.
+  const person = kind === 'engineer' ? eng : document.getElementById('f-escort').value;
+  const expiredDocs = person ? expiredDocumentsOf(person) : [];
+  if(expiredDocs.length && !localizedConfirm(`تنبيه: ${expiredDocs.join(' و')} لـ ${person} منتهية. هل تريد المتابعة وتسليم الأجهزة؟`)) return;
   const movementStatus=document.getElementById('f-status').value;
   if(movementStatus==='استلام'&&!document.getElementById('f-rdate').value){toast('⚠️ تاريخ الاستلام مطلوب');return;}
   if(movementStatus==='تسليم'&&!document.getElementById('f-ddate').value){toast('⚠️ تاريخ التسليم مطلوب');return;}
@@ -3002,10 +3131,10 @@ function buildWorkbook() {
   XLSX.utils.book_append_sheet(wb,ws2,"المخزون");
 
   // Engineers (Recipients) sheet
-  const engData = [["الاسم الكامل","الرقم الوظيفي","الجنسية","رقم الإقامة / الهوية","رقم التليفون"]];
-  ENGINEERS.forEach(e=>{engData.push([e.name,e.empid||'',e.nat||'',e.iqama||'',e.phone||'']);});
+  const engData = [["الاسم الكامل","الرقم الوظيفي","الجنسية","رقم الإقامة / الهوية","رقم التليفون","الوظيفة","تاريخ انتهاء الإقامة","رقم بطاقة SEC-ID","تاريخ انتهاء بطاقة SEC-ID","تاريخ تسليم بطاقة SEC-ID"]];
+  ENGINEERS.forEach(e=>{engData.push([e.name,e.empid||'',e.nat||'',e.iqama||'',e.phone||'',e.job||'',e.iqamaExpiry||'',e.secIdNo||'',e.secIdExpiry||'',e.secIdReturnedOn||'']);});
   const ws3 = XLSX.utils.aoa_to_sheet(engData);
-  ws3['!cols'] = [{wch:32},{wch:14},{wch:14},{wch:18},{wch:16}];
+  ws3['!cols'] = [{wch:32},{wch:14},{wch:14},{wch:18},{wch:16},{wch:10},{wch:16},{wch:16},{wch:18},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws3,"إدارة المستلمين");
 
   // Locations sheet
@@ -3029,10 +3158,10 @@ function exportExcelSettings() {
   const wb = XLSX.utils.book_new();
 
   // Engineers sheet
-  const engData = [["الاسم الكامل","الرقم الوظيفي","الجنسية","رقم الإقامة / الهوية","رقم التليفون"]];
-  ENGINEERS.forEach(e=>{engData.push([e.name,e.empid||'',e.nat||'',e.iqama||'',e.phone||'']);});
+  const engData = [["الاسم الكامل","الرقم الوظيفي","الجنسية","رقم الإقامة / الهوية","رقم التليفون","الوظيفة","تاريخ انتهاء الإقامة","رقم بطاقة SEC-ID","تاريخ انتهاء بطاقة SEC-ID","تاريخ تسليم بطاقة SEC-ID"]];
+  ENGINEERS.forEach(e=>{engData.push([e.name,e.empid||'',e.nat||'',e.iqama||'',e.phone||'',e.job||'',e.iqamaExpiry||'',e.secIdNo||'',e.secIdExpiry||'',e.secIdReturnedOn||'']);});
   const ws1 = XLSX.utils.aoa_to_sheet(engData);
-  ws1['!cols'] = [{wch:32},{wch:14},{wch:14},{wch:18},{wch:16}];
+  ws1['!cols'] = [{wch:32},{wch:14},{wch:14},{wch:18},{wch:16},{wch:10},{wch:16},{wch:16},{wch:18},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws1,"إدارة المستلمين");
 
   // Locations sheet
@@ -3103,19 +3232,59 @@ function renderSettings() {
 function renderEngTable() {
   const tbody = document.getElementById('eng-tbody');
   if(!tbody) return;
-  tbody.innerHTML = ENGINEERS.map((e,i) => `<tr>
-    <td style="font-weight:600">${escapeHTML(e.name)}</td>
+  const filter = document.getElementById('eng-doc-filter')?.value || 'all';
+  const worst = e => ['expired','critical','urgent','soon'].map(k => [documentState(e.iqamaExpiry,''),documentState(e.secIdExpiry,e.secIdReturnedOn)].some(s => s.key === k) ? k : null).find(Boolean);
+  const rows = ENGINEERS.map((e,i) => ({e,i})).filter(({e}) => filter === 'all' || (filter === 'expired' ? worst(e) === 'expired' : !!worst(e)));
+  tbody.innerHTML = rows.map(({e,i}) => {
+    const person = e.name !== WAREHOUSE_HOLDER;
+    return `<tr>
+    <td style="font-weight:600">${escapeHTML(e.name)}${e.job ? `<div class="cell-sub">${escapeHTML(translateRuntimeText(e.job))}</div>` : ''}</td>
     <td>${escapeHTML(e.empid||'—')}</td>
     <td>${escapeHTML(e.nat||'—')}</td>
-    <td style="font-size:12px;color:var(--muted)">${escapeHTML(e.iqama||'—')}</td>
+    <td style="font-size:12px;color:var(--muted)">${escapeHTML(e.iqama||'—')}${person ? `<div>${documentBadge(e.iqamaExpiry,'')}</div>` : ''}</td>
+    <td>${person ? `<span dir="ltr">${escapeHTML(e.secIdNo||'—')}</span><div>${documentBadge(e.secIdExpiry,e.secIdReturnedOn)}</div>` : '—'}</td>
     <td>${escapeHTML(e.phone||'—')}</td>
     <td class="no-print">
-      <div style="display:flex;gap:6px;white-space:nowrap">
+      <div class="eng-actions">
         <button class="btn-edit" onclick="openEngModal(${i})">✏️ تعديل</button>
+        ${person && e.dbId ? `<button class="btn-edit edit-only" onclick="renewDocument(${i},'iqama')">تجديد الإقامة</button>
+        <button class="btn-edit edit-only" onclick="renewDocument(${i},'sec_id')">تجديد SEC-ID</button>
+        ${(e.secIdNo||e.secIdExpiry) && !e.secIdReturnedOn ? `<button class="btn-edit edit-only" onclick="handInSecId(${i})">سُلّمت البطاقة</button>` : ''}` : ''}
         <button class="btn-del" onclick="deleteEng(${i})">🗑 حذف</button>
       </div>
     </td>
-  </tr>`).join('');
+  </tr>`;}).join('') || `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">${escapeHTML(translateRuntimeText('لا يوجد مستلمون مطابقون'))}</td></tr>`;
+}
+
+// "Renewed": new expiry date (suggested one year after the current one).
+async function renewDocument(idx, doc) {
+  if(!requireEditPermission())return;
+  const e = ENGINEERS[idx]; if(!e?.dbId) return;
+  const current = doc === 'iqama' ? e.iqamaExpiry : e.secIdExpiry;
+  const base = current ? new Date(current+'T00:00:00') : new Date(); base.setFullYear(base.getFullYear()+1);
+  const answer = localizedPrompt(`${doc === 'iqama' ? 'تاريخ انتهاء الإقامة الجديد' : 'تاريخ انتهاء بطاقة SEC-ID الجديدة'} — ${e.name} (YYYY-MM-DD):`, localISODate(base));
+  if(answer === null) return;
+  const date = String(answer).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date+'T00:00:00').getTime())){toast('⚠️ اكتب التاريخ بصيغة YYYY-MM-DD');return;}
+  await saveDocumentAction(idx, doc, 'renew', date);
+}
+// "Handed in": the date the SEC-ID card was returned to the electricity company, kept as proof.
+async function handInSecId(idx) {
+  if(!requireEditPermission())return;
+  const e = ENGINEERS[idx]; if(!e?.dbId) return;
+  const answer = localizedPrompt(`تاريخ تسليم بطاقة SEC-ID لشركة الكهرباء — ${e.name} (YYYY-MM-DD):`, localISODate());
+  if(answer === null) return;
+  const date = String(answer).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){toast('⚠️ اكتب التاريخ بصيغة YYYY-MM-DD');return;}
+  await saveDocumentAction(idx, 'sec_id', 'returned', date);
+}
+async function saveDocumentAction(idx, doc, action, date) {
+  const e = ENGINEERS[idx];
+  const res = await callRpc('sf_engineer_document',{p_id:e.dbId,p_document:doc,p_action:action,p_date:date});
+  if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحفظ المستلم':rpcErrorMessage(res.error)));return;}
+  ENGINEERS[idx] = dbEngineerToLocal(res.data);
+  saveEngineers(); renderEngTable(); renderDashboard();
+  toast('✅ تم حفظ تاريخ '+(doc === 'iqama' ? 'الإقامة' : 'بطاقة SEC-ID')+' — '+e.name);
 }
 
 function openEngModal(idx) {
@@ -3129,9 +3298,13 @@ function openEngModal(idx) {
     document.getElementById('em-nat').value = e.nat||'';
     document.getElementById('em-iqama').value = e.iqama||'';
     document.getElementById('em-phone').value = e.phone||'';
+    document.getElementById('em-job').value = e.job||'';
+    document.getElementById('em-iqama-expiry').value = e.iqamaExpiry||'';
+    document.getElementById('em-sec-no').value = e.secIdNo||'';
+    document.getElementById('em-sec-expiry').value = e.secIdExpiry||'';
   } else {
     title.textContent = 'إضافة مستلم جديد';
-    ['em-name','em-empid','em-nat','em-iqama','em-phone'].forEach(id=>document.getElementById(id).value='');
+    ['em-name','em-empid','em-nat','em-iqama','em-phone','em-job','em-iqama-expiry','em-sec-no','em-sec-expiry'].forEach(id=>document.getElementById(id).value='');
   }
   document.getElementById('eng-modal').classList.add('open');
 }
@@ -3148,11 +3321,13 @@ async function saveEng() {
   const current=engEditIdx!==null?ENGINEERS[engEditIdx]:null;
   if(current&&current.name==='مدير المخزن (صالح)'&&!current.dbId){toast('لا يمكن تعديل مدير المخزن الافتراضي');return;}
   const payload={name,empid:document.getElementById('em-empid').value.trim(),nationality:document.getElementById('em-nat').value.trim(),
-    iqama:document.getElementById('em-iqama').value.trim(),phone:document.getElementById('em-phone').value.trim()};
+    iqama:document.getElementById('em-iqama').value.trim(),phone:document.getElementById('em-phone').value.trim(),
+    job_title:document.getElementById('em-job').value,iqama_expiry:document.getElementById('em-iqama-expiry').value,
+    sec_id_no:document.getElementById('em-sec-no').value.trim(),sec_id_expiry:document.getElementById('em-sec-expiry').value};
   // A rename is carried by the database to the devices this person holds and to the movement history.
   const res=await callRpc('sf_save_engineer',{p_id:current?.dbId||null,p_engineer:payload});
   if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحفظ المستلم':rpcErrorMessage(res.error)));return;}
-  const row=res.data,eng={dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||''};
+  const eng=dbEngineerToLocal(res.data);
   if(current){ENGINEERS[engEditIdx]=eng;toast('تم تعديل بيانات ' + name);}else{ENGINEERS.push(eng);toast('تم إضافة المستلم ' + name);}
   saveEngineers();refreshEngDropdowns();closeEngModal();renderEngTable();
   if(current&&current.name!==name)await syncFromCloud();
