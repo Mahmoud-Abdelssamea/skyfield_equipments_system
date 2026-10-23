@@ -2938,7 +2938,8 @@ function recordIqama(r) {
 function printParties(r, lang='ar') {
   const {t, tv} = printWords(lang);
   const kind = r.kind || 'engineer', out = kind !== 'engineer';
-  const person = name => name && name !== WAREHOUSE_HOLDER ? ENGINEERS.find(e => e.name === name) : null;
+  // The warehouse manager is on the recipients list too, with his own employee number, Iqama and phone.
+  const person = name => name ? ENGINEERS.find(e => e.name === name) : null;
   const row = (label, value) => value ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #e5e5e5"><span style="font-size:11px;color:#888">${escapeHTML(t(label))}</span><span style="font-size:13px;font-weight:600;text-align:end">${escapeHTML(value)}</span></div>` : '';
   const card = (title, name, rows) => `<div style="border:1px solid #ddd;border-radius:8px;overflow:hidden">
       <div style="background:#F3F5FA;padding:7px 12px;font-size:11px;font-weight:700;color:#0F3460">${escapeHTML(t(title))}</div>
@@ -2952,7 +2953,7 @@ function printParties(r, lang='ar') {
     ? card('المستلم — العميل (المستأجر)', r.engineer, [row('اسم المستلم لدى العميل', r.contact), row('رقم الإقامة / الهوية', r.idNumber), row('رقم الجوال', r.phone)])
     : kind === 'maintenance'
     ? card('المستلم — جهة الصيانة أو المعايرة', r.engineer, [row('رقم الجوال', r.phone)])
-    : card('المستلم', tv(r.engineer), recipient || r.empid ? [row('الوظيفة', tv(recipient?.job)), row('الرقم الوظيفي', r.empid || recipient?.empid), row('رقم الإقامة / الهوية', recordIqama(r)), row('رقم الجوال', r.phone || recipient?.phone)] : []);
+    : card('المستلم', tv(r.engineer), recipient || r.empid ? [row('الوظيفة', tv(recipient?.job)), row('الرقم الوظيفي', r.empid || recipient?.empid), row('رقم الإقامة / الهوية', recordIqama(r) || recipient?.iqama), row('رقم الجوال', r.phone || recipient?.phone)] : []);
   const details = [['نوع الحركة', t({engineer:'مهندس / المستودع', rental:'تأجير لعميل', maintenance:'صيانة أو معايرة خارجية'}[kind])],
     ['الحالة', tv(r.status)], ['موقع العمل', tv(r.location)], ['المهندس المرافق', out ? r.escort : ''], ['المرجع', out ? r.ref : '']].filter(([,v]) => v);
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
