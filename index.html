@@ -2192,7 +2192,7 @@ function deviceImportValue(row,names){
 
 function importedDateToISO(value){
   if(value===undefined||value===null||value==='')return '';
-  if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString().slice(0,10);
+  if(value instanceof Date&&!Number.isNaN(value.getTime()))return localISODate(value);
   if(typeof value==='number'){
     const parsed=XLSX.SSF.parse_date_code(value);
     if(parsed)return `${parsed.y}-${String(parsed.m).padStart(2,'0')}-${String(parsed.d).padStart(2,'0')}`;
@@ -2214,7 +2214,8 @@ async function importDeviceUpdates(event){
   if(!file)return;
   if(!requireEditPermission()){input.value='';return;}
   try{
-    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+    // cellDates is off: SheetJS turns date cells into local-time Date objects that shift a day in UTC+ zones
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});
     const sheetName=wb.SheetNames.includes('الأجهزة والمعايرة')?'الأجهزة والمعايرة':
       (wb.SheetNames.includes('المخزون')?'المخزون':wb.SheetNames[0]);
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:'',raw:true});
