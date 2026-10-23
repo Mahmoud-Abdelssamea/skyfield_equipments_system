@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام متابعة الأجهزة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
 <script src="xlsx-0.20.3.full.min.js"></script>
 <script src="supabase-js-2.117.2.js"></script>
 <style>
@@ -17,7 +20,7 @@
   --red:#F8D7DA;--red-t:#721c24;
   --teal:#D1ECF1;--teal-t:#0c5460;
 }
-body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f8;color:var(--text);min-height:100vh;direction:rtl}
+body{font-family:'Inter','Tajawal','Segoe UI',Tahoma,Arial,sans-serif;background:#f0f2f8;color:var(--text);min-height:100vh;direction:rtl}
 html[dir="ltr"] body{direction:ltr;text-align:left}
 html[dir="ltr"] input,html[dir="ltr"] select,html[dir="ltr"] textarea{direction:ltr;text-align:left}
 html[dir="ltr"] input[dir="ltr"],html[dir="ltr"] textarea[dir="ltr"]{direction:ltr}
@@ -150,34 +153,39 @@ select{cursor:pointer}
 }
 
 /* ── Login Screen ─────────────────────────────────────────── */
+/* Same navy, orange and fonts as the main Sky Field system. */
 #login-screen{
-  position:fixed;inset:0;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
-  display:flex;align-items:center;justify-content:center;z-index:9999;
+  position:fixed;inset:0;background:linear-gradient(135deg,#1F3864 0%,#16294a 100%);
+  display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;
 }
 #login-screen.hidden{display:none;}
 .login-box{
-  background:#fff;border-radius:20px;padding:48px 40px;width:100%;max-width:400px;
-  box-shadow:0 24px 60px rgba(0,0,0,0.4);text-align:center;position:relative;
+  background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:400px;
+  box-shadow:0 24px 60px rgba(0,0,0,0.35);text-align:center;position:relative;
 }
-.login-logo{font-size:48px;margin-bottom:8px;}
-.login-title{font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:4px;}
-.login-sub{font-size:13px;color:#888;margin-bottom:32px;}
+.login-logo{display:block;height:64px;max-width:220px;object-fit:contain;margin:8px auto 14px;}
+.login-title{font-size:21px;font-weight:700;color:#1F3864;margin-bottom:4px;}
+.login-sub{font-size:13px;color:#6B6B80;margin-bottom:28px;}
+.login-help{font-size:13px;color:#6B6B80;line-height:1.7;margin-bottom:16px;}
 .login-field{margin-bottom:16px;text-align:right;}
-.login-field label{display:block;font-size:13px;font-weight:600;color:#444;margin-bottom:6px;}
+.login-field label{display:block;font-size:13px;font-weight:600;color:#1A1A2E;margin-bottom:6px;}
 .login-field input{
-  width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:10px;
+  width:100%;padding:12px 16px;border:1.5px solid #E3E6EE;border-radius:10px;background:#fff;
   font-size:15px;font-family:inherit;outline:none;transition:border .2s;direction:ltr;
 }
-.login-field input:focus{border-color:#0f3460;}
+.login-field input:focus{border-color:#1F3864;}
 .login-btn{
-  width:100%;padding:14px;background:linear-gradient(135deg,#0f3460,#e94560);
+  width:100%;padding:13px;background:#E8610A;
   color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;
-  cursor:pointer;font-family:inherit;margin-top:8px;transition:opacity .2s;
+  cursor:pointer;font-family:inherit;margin-top:8px;transition:background .2s;
 }
-.login-btn:hover{opacity:0.9;}
+.login-btn:hover{background:#cf5608;}
+.login-link{display:block;margin:14px auto 0;background:none;border:none;color:#1F3864;text-decoration:underline;cursor:pointer;font:inherit;font-size:13px}
 .login-err{
-  color:#e94560;font-size:13px;margin-top:12px;min-height:20px;font-weight:600;
+  color:#c2413b;font-size:13px;margin-top:12px;min-height:20px;font-weight:600;line-height:1.6;
 }
+.login-err.ok{color:#2f6f49}
+@media(max-width:420px){.login-box{padding:32px 22px}}
 .login-config{margin-top:12px;background:none;border:none;color:#0f3460;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px}
 .config-help{font-size:11px;color:var(--muted);line-height:1.7;background:var(--light);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px}
 .file-current{font-size:11px;color:var(--muted);margin-top:5px;min-height:18px}
@@ -277,19 +285,43 @@ html{scroll-behavior:smooth}
 <div id="login-screen">
   <div class="login-box">
     <button class="lang-switch login-language" data-language-control onclick="toggleLanguage()">English</button>
-    <div class="login-logo">📦</div>
+    <img class="login-logo" id="login-logo" alt="Sky Field">
     <div class="login-title">نظام متابعة الأجهزة</div>
-    <div class="login-sub">Sky Field — تسجيل الدخول</div>
-    <div class="login-field">
-      <label>البريد الإلكتروني</label>
-      <input id="l-user" type="email" dir="ltr" placeholder="name@skyfield.company" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-sub" id="login-sub">Sky Field — تسجيل الدخول</div>
+    <div id="login-panel-signin">
+      <div class="login-field">
+        <label for="l-user">البريد الإلكتروني</label>
+        <input id="l-user" type="email" dir="ltr" placeholder="name@skyfield.company" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <div class="login-field">
+        <label for="l-pass">كلمة المرور</label>
+        <input id="l-pass" type="password" placeholder="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="login-btn" onclick="doLogin()">دخول</button>
+      <button type="button" class="login-link" onclick="showLoginPanel('reset')">نسيت كلمة المرور؟</button>
     </div>
-    <div class="login-field">
-      <label>كلمة المرور</label>
-      <input id="l-pass" type="password" placeholder="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="login-panel-reset" hidden>
+      <p class="login-help">اكتب بريدك الإلكتروني وسنرسل لك رابطًا لتعيين كلمة مرور جديدة.</p>
+      <div class="login-field">
+        <label for="l-reset-email">البريد الإلكتروني</label>
+        <input id="l-reset-email" type="email" dir="ltr" placeholder="name@skyfield.company" autocomplete="username" onkeydown="if(event.key==='Enter')sendPasswordReset()">
+      </div>
+      <button class="login-btn" onclick="sendPasswordReset()">إرسال الرابط</button>
+      <button type="button" class="login-link" onclick="showLoginPanel('signin')">العودة لتسجيل الدخول</button>
     </div>
-    <button class="login-btn" onclick="doLogin()">دخول</button>
-    <div class="login-err" id="login-err"></div>
+    <div id="login-panel-newpass" hidden>
+      <p class="login-help">اختر كلمة مرور جديدة لحسابك (8 أحرف على الأقل).</p>
+      <div class="login-field">
+        <label for="l-new-pass">كلمة المرور الجديدة</label>
+        <input id="l-new-pass" type="password" autocomplete="new-password">
+      </div>
+      <div class="login-field">
+        <label for="l-new-pass2">تأكيد كلمة المرور</label>
+        <input id="l-new-pass2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')saveNewPassword()">
+      </div>
+      <button class="login-btn" onclick="saveNewPassword()">حفظ كلمة المرور</button>
+    </div>
+    <div class="login-err" id="login-err" role="alert"></div>
   </div>
 </div>
 
@@ -1124,6 +1156,27 @@ const AR_TO_EN=Object.freeze({
   "جاري تسجيل الدخول...":"Signing in...",
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
+  "نسيت كلمة المرور؟":"Forgot password?",
+  "استعادة كلمة المرور":"Reset password",
+  "كلمة مرور جديدة":"New password",
+  "اكتب بريدك الإلكتروني وسنرسل لك رابطًا لتعيين كلمة مرور جديدة.":"Enter your email and we will send you a link to set a new password.",
+  "إرسال الرابط":"Send link",
+  "العودة لتسجيل الدخول":"Back to sign in",
+  "اختر كلمة مرور جديدة لحسابك (8 أحرف على الأقل).":"Choose a new password for your account (at least 8 characters).",
+  "كلمة المرور الجديدة":"New password",
+  "تأكيد كلمة المرور":"Confirm password",
+  "حفظ كلمة المرور":"Save password",
+  "أدخل بريدًا إلكترونيًا صحيحًا":"Enter a valid email address",
+  "جاري الإرسال...":"Sending...",
+  "طلبات كثيرة، حاول بعد دقائق":"Too many requests; try again in a few minutes",
+  "إذا كان البريد مسجلًا في النظام فستصلك رسالة فيها رابط تعيين كلمة المرور خلال دقائق.":"If this email is registered, you will receive a password reset link within a few minutes.",
+  "كلمة المرور 8 أحرف على الأقل":"The password must be at least 8 characters",
+  "كلمتا المرور غير متطابقتين":"The passwords do not match",
+  "كلمة المرور ضعيفة أو مسرّبة، اختر غيرها":"This password is weak or has been leaked; choose another",
+  "تعذر حفظ كلمة المرور":"Could not save the password",
+  "تم تغيير كلمة المرور":"Password changed",
+  "الرابط منتهي أو استُخدم من قبل. اطلب رابطًا جديدًا.":"The link has expired or was already used. Request a new one.",
+  "لا يمكن حذف نوع مستخدم في أجهزة — غيّر نوع هذه الأجهزة أولًا":"A type used by devices cannot be deleted; change those devices' type first",
   "اضبط اتصال Supabase للبدء":"Configure Supabase to begin",
   "النوع موجود مسبقاً":"Type already exists",
   "رقم غير صحيح":"Invalid number",
@@ -2202,7 +2255,7 @@ function resetForm() {
   document.getElementById('f-dtime').value='';
   document.getElementById('f-rdate').value=localISODate();
   document.getElementById('f-rtime').value=new Date().toTimeString().slice(0,5);
-  document.getElementById('f-loc').value=LOCATIONS[0]||'المتجر أ';
+  document.getElementById('f-loc').value=LOCATIONS[0]||'المستودع';
   document.getElementById('f-status').value='استلام';
   updateTimeFieldsByStatus();
   document.getElementById('form-status-badge').textContent='جديد';
@@ -2771,10 +2824,56 @@ async function doLogin() {
   await syncFromCloud();
 }
 
+// The password-reset email opens the page with "#...type=recovery" (or "#error=..." when the link has expired).
+// Read it before the Supabase client signs in from the link and clears the address.
+const AUTH_LINK=new URLSearchParams(location.hash.replace(/^#/,''));
+let PASSWORD_RECOVERY=AUTH_LINK.get('type')==='recovery';
+document.getElementById('login-logo').src=document.querySelector('.app-header img')?.src||'';
+
+function showLoginPanel(name,message=''){
+  ['signin','reset','newpass'].forEach(p=>{document.getElementById('login-panel-'+p).hidden=p!==name;});
+  document.getElementById('login-sub').textContent=translateRuntimeText({signin:'Sky Field — تسجيل الدخول',reset:'استعادة كلمة المرور',newpass:'كلمة مرور جديدة'}[name]);
+  const errorEl=document.getElementById('login-err');errorEl.classList.remove('ok');errorEl.textContent=translateRuntimeText(message);
+  if(name==='reset')document.getElementById('l-reset-email').value=document.getElementById('l-user').value.trim();
+  const focus={signin:'l-user',reset:'l-reset-email',newpass:'l-new-pass'}[name];
+  setTimeout(()=>document.getElementById(focus)?.focus(),100);
+}
+
+async function sendPasswordReset(){
+  const client=getSupabaseClient();
+  const email=document.getElementById('l-reset-email').value.trim();
+  const errorEl=document.getElementById('login-err');errorEl.classList.remove('ok');
+  if(!client){errorEl.textContent=translateRuntimeText('⚠️ اضبط اتصال Supabase أولًا');return;}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){errorEl.textContent=translateRuntimeText('أدخل بريدًا إلكترونيًا صحيحًا');return;}
+  errorEl.textContent=translateRuntimeText('جاري الإرسال...');
+  const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  if(error&&/rate|limit|seconds/i.test(error.message||'')){errorEl.textContent=translateRuntimeText('طلبات كثيرة، حاول بعد دقائق');return;}
+  // Same answer whether or not the address has an account, so the form does not reveal who is registered.
+  errorEl.classList.add('ok');
+  errorEl.textContent=translateRuntimeText('إذا كان البريد مسجلًا في النظام فستصلك رسالة فيها رابط تعيين كلمة المرور خلال دقائق.');
+}
+
+async function saveNewPassword(){
+  const client=getSupabaseClient();
+  const pass=document.getElementById('l-new-pass').value,pass2=document.getElementById('l-new-pass2').value;
+  const errorEl=document.getElementById('login-err');errorEl.classList.remove('ok');
+  if(pass.length<8){errorEl.textContent=translateRuntimeText('كلمة المرور 8 أحرف على الأقل');return;}
+  if(pass!==pass2){errorEl.textContent=translateRuntimeText('كلمتا المرور غير متطابقتين');return;}
+  errorEl.textContent=translateRuntimeText('جاري الحفظ...');
+  const {error}=await client.auth.updateUser({password:pass});
+  if(error){errorEl.textContent='❌ '+translateRuntimeText(/weak|pwned|leaked|compromised/i.test(error.message||'')?'كلمة المرور ضعيفة أو مسرّبة، اختر غيرها':(error.message||'تعذر حفظ كلمة المرور'));return;}
+  PASSWORD_RECOVERY=false;
+  document.getElementById('l-new-pass').value='';document.getElementById('l-new-pass2').value='';
+  showLoginPanel('signin');setLoginVisible(false);
+  toast('✅ تم تغيير كلمة المرور');
+  await retryPendingMovements(true);
+  if(await retryPendingDeviceSaves(true))await syncFromCloud();
+}
+
 function setLoginVisible(visible,message=''){
   document.getElementById('login-screen').classList.toggle('hidden',!visible);
   document.getElementById('login-err').textContent=message;
-  if(visible)setTimeout(()=>document.getElementById('l-user').focus(),100);
+  if(visible&&document.getElementById('login-panel-signin').hidden===false)setTimeout(()=>document.getElementById('l-user').focus(),100);
 }
 
 async function initializeAuth(){
@@ -2783,13 +2882,24 @@ async function initializeAuth(){
   if(authSubscription){authSubscription.unsubscribe();authSubscription=null;}
   const {data:{session},error}=await client.auth.getSession();
   if(error){setLoginVisible(true,'تعذر قراءة جلسة الدخول');return;}
-  setLoginVisible(!session);
-  if(session){
-    await retryPendingMovements(true);
-    if(await retryPendingDeviceSaves(true))await syncFromCloud();
-    else showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+  if(AUTH_LINK.get('error')){
+    history.replaceState(null,'',location.pathname+location.search);
+    if(!session){setLoginVisible(true);showLoginPanel('reset','⚠️ الرابط منتهي أو استُخدم من قبل. اطلب رابطًا جديدًا.');}
+  }
+  if(PASSWORD_RECOVERY&&session){
+    // Signed in by the email link only to choose a new password; data loads after it is saved.
+    setLoginVisible(true);showLoginPanel('newpass');
+  }else{
+    if(!AUTH_LINK.get('error')||session)setLoginVisible(!session);
+    if(session){
+      await retryPendingMovements(true);
+      if(await retryPendingDeviceSaves(true))await syncFromCloud();
+      else showSyncBadge('محفوظ محليًا وبانتظار المزامنة','#856404','#FFF3CD');
+    }
   }
   const {data}=client.auth.onAuthStateChange((event,nextSession)=>{
+    if(event==='PASSWORD_RECOVERY'){PASSWORD_RECOVERY=true;setLoginVisible(true);showLoginPanel('newpass');return;}
+    if(PASSWORD_RECOVERY&&nextSession)return;
     setLoginVisible(!nextSession);
   });
   authSubscription=data.subscription;
@@ -2811,20 +2921,28 @@ async function logout() {
   clearLocalData();renderAfterClear();
   CURRENT_ROLE='viewer';applyRolePermissions();
   document.getElementById('l-pass').value='';
-  setLoginVisible(true,'تم تسجيل الخروج');
+  showLoginPanel('signin');setLoginVisible(true,'تم تسجيل الخروج');
   showSyncBadge('غير متصل','#856404','#FFF3CD');
 }
 
 // ── Device Types Management ────────────────────────────────────
 const LS_TYPES = 'sf_device_types';
-const DEFAULT_TYPES = ['هاتف','تابلت','لابتوب','إكسسوار','أجهزة اختبارات','أخرى'];
+const DEFAULT_TYPES = ['أجهزة اختبارات','لابتوب','أخرى'];
+// Left over from the original template; dropped from saved lists unless a device still uses them.
+const TEMPLATE_TYPES = ['هاتف','تابلت','إكسسوار'];
 let DEVICE_TYPES = [];
 
 function loadDeviceTypes() {
   try {
-    const saved = localStorage.getItem(LS_TYPES);
-    DEVICE_TYPES = saved ? JSON.parse(saved) : [...DEFAULT_TYPES];
-  } catch(e) { DEVICE_TYPES = [...DEFAULT_TYPES]; }
+    const saved = JSON.parse(localStorage.getItem(LS_TYPES)||'[]');
+    DEVICE_TYPES = Array.isArray(saved) ? saved.filter(t=>typeof t==='string'&&t.trim()&&!TEMPLATE_TYPES.includes(t)) : [];
+  } catch(e) { DEVICE_TYPES = []; }
+}
+
+// Types offered in the device form: the defaults, every type a device has, then types added on this browser.
+function deviceTypeOptions() {
+  const fromDevices = INVENTORY.map(d=>(d.type||'').trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b,'ar'));
+  return [...new Set([...DEFAULT_TYPES, ...fromDevices, ...DEVICE_TYPES])];
 }
 
 function saveDeviceTypes() {
@@ -2834,7 +2952,9 @@ function saveDeviceTypes() {
 function renderTypeSelect(selectedValue) {
   const sel = document.getElementById('dm-type');
   if(!sel) return;
-  sel.innerHTML = DEVICE_TYPES.map(t =>
+  const types = deviceTypeOptions();
+  if(selectedValue && !types.includes(selectedValue)) types.push(selectedValue);
+  sel.innerHTML = types.map(t =>
     `<option value="${escapeHTML(t)}" ${t===selectedValue?'selected':''}>${escapeHTML(t)}</option>`
   ).join('') + '<option value="__manage__">⚙️ إدارة الأنواع...</option>';
 }
@@ -2842,7 +2962,7 @@ function renderTypeSelect(selectedValue) {
 function onTypeSelect() {
   const sel = document.getElementById('dm-type');
   if(sel.value === '__manage__') {
-    sel.value = DEVICE_TYPES[0];
+    sel.value = DEFAULT_TYPES[0];
     openTypeManager();
   }
 }
@@ -2851,7 +2971,7 @@ function addNewType() {
   const name = localizedPrompt('أدخل اسم النوع الجديد:');
   if(!name || !name.trim()) return;
   const trimmed = name.trim();
-  if(DEVICE_TYPES.includes(trimmed)){toast('النوع موجود مسبقاً');return;}
+  if(deviceTypeOptions().includes(trimmed)){toast('النوع موجود مسبقاً');return;}
   DEVICE_TYPES.push(trimmed);
   saveDeviceTypes();
   renderTypeSelect(trimmed);
@@ -2859,19 +2979,23 @@ function addNewType() {
 }
 
 function openTypeManager() {
-  const list = DEVICE_TYPES.map((t,i) =>
-    `${i+1}. ${t} ${DEFAULT_TYPES.includes(t)?'(افتراضي)':''}`
+  const types = deviceTypeOptions();
+  const usedBy = t => INVENTORY.filter(d=>(d.type||'').trim()===t).length;
+  const list = types.map((t,i) =>
+    `${i+1}. ${t} ${DEFAULT_TYPES.includes(t)?'(افتراضي)':usedBy(t)?`(${usedBy(t)} جهاز)`:''}`
   ).join('\n');
   const action = localizedPrompt(CURRENT_LANG==='en'
     ? 'Current types:\n' + list + '\n\nEnter the type number to delete, or press Cancel:'
     : 'الأنواع الحالية:\n' + list + '\n\nأدخل رقم النوع لحذفه، أو اضغط إلغاء:');
   if(!action || !action.trim()) return;
   const idx = parseInt(action.trim()) - 1;
-  if(isNaN(idx) || idx < 0 || idx >= DEVICE_TYPES.length){toast('رقم غير صحيح');return;}
-  if(DEFAULT_TYPES.includes(DEVICE_TYPES[idx])){toast('لا يمكن حذف الأنواع الافتراضية');return;}
-  const removed = DEVICE_TYPES.splice(idx,1)[0];
+  if(isNaN(idx) || idx < 0 || idx >= types.length){toast('رقم غير صحيح');return;}
+  const removed = types[idx];
+  if(DEFAULT_TYPES.includes(removed)){toast('لا يمكن حذف الأنواع الافتراضية');return;}
+  if(usedBy(removed)){toast('لا يمكن حذف نوع مستخدم في أجهزة — غيّر نوع هذه الأجهزة أولًا');return;}
+  DEVICE_TYPES = DEVICE_TYPES.filter(t=>t!==removed);
   saveDeviceTypes();
-  renderTypeSelect(DEVICE_TYPES[0]);
+  renderTypeSelect(DEFAULT_TYPES[0]);
   toast('🗑 تم حذف النوع: ' + removed);
 }
 
@@ -3022,7 +3146,7 @@ function openDeviceModal(idx) {
     document.getElementById('dm-id').value = '';
     document.getElementById('dm-id').readOnly = false;
     document.getElementById('dm-name').value = '';
-    renderTypeSelect('هاتف');
+    renderTypeSelect(DEFAULT_TYPES[0]);
     document.getElementById('dm-brand').value = '';
     document.getElementById('dm-serial').value = '';
     document.getElementById('dm-specs').value = '';
