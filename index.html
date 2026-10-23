@@ -2233,6 +2233,9 @@ function renderLog() {
     getRecordDeliveredBy(r).toLowerCase().includes(q) ||
     r.devices.some(d=>d.id&&d.id.toLowerCase().includes(q)||d.name&&d.name.toLowerCase().includes(q))
   );
+  // Newest record number first (REC-049 before REC-048).
+  const recNo=r=>parseInt((r.id.match(/(\d+)$/)||[])[1]||'0',10);
+  filtered.sort((a,b)=>recNo(b)-recNo(a));
   // Movements saved on this device while offline, waiting to be sent.
   const pendingRows=getPendingMovements().filter(p=>!q||[p.payload.engineer,...p.payload.devices.map(d=>d.id)].join(' ').toLowerCase().includes(q)).map(p=>`<tr style="background:#FFF8E6">
       <td class="rec-num">${escapeHTML(p.error?'لم تُحفظ':'بانتظار الحفظ')}</td>
