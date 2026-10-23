@@ -3158,7 +3158,21 @@ function selectEng(name) {
 function openDevList(n) {
   renderDevList(n, '');
   document.getElementById('dev-list-'+n).classList.add('open');
+  placeDevList(n);
 }
+// The device table sits in a sideways-scrolling box that would cut the list off, so the open list floats over
+// the page under its search box (or above it when there is no room below).
+function placeDevList(n) {
+  const list = document.getElementById('dev-list-'+n), input = document.getElementById('dev-inp-'+n);
+  if(!list || !input || !list.classList.contains('open')) return;
+  const r = input.getBoundingClientRect(), below = window.innerHeight - r.bottom - 8, height = Math.min(320, Math.max(below, r.top - 8));
+  const width = Math.min(Math.max(r.width, 320), window.innerWidth - 16), left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+  Object.assign(list.style, {position:'fixed', left:left+'px', right:'auto', width:width+'px', maxHeight:height+'px', zIndex:1000,
+    top: below >= Math.min(220, height) ? (r.bottom+4)+'px' : Math.max(8, r.top-4-Math.min(list.scrollHeight, height))+'px'});
+  list.dataset.row = n;
+}
+window.addEventListener('scroll', () => document.querySelectorAll('.srch-list.open[data-row]').forEach(l => placeDevList(l.dataset.row)), true);
+window.addEventListener('resize', () => document.querySelectorAll('.srch-list.open[data-row]').forEach(l => placeDevList(l.dataset.row)));
 function closeDevList(n) {
   const el = document.getElementById('dev-list-'+n);
   if(el) el.classList.remove('open');
@@ -3167,6 +3181,7 @@ function filterDevList(n) {
   const q = document.getElementById('dev-inp-'+n).value;
   renderDevList(n, q);
   document.getElementById('dev-list-'+n).classList.add('open');
+  placeDevList(n);
 }
 function renderDevList(n, q) {
   const list = document.getElementById('dev-list-'+n);
