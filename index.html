@@ -38,7 +38,7 @@ nav{background:#fff;border-bottom:2px solid var(--border);display:flex;padding:0
 .nav-tab{padding:14px 22px;font-size:14px;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;font-weight:500;white-space:nowrap}
 .nav-tab:hover{color:var(--accent)}
 .nav-tab.active{color:var(--accent);border-bottom-color:var(--gold);font-weight:600}
-.page{display:none;padding:28px;max-width:1100px;margin:0 auto}
+.page{display:none;padding:28px;max-width:1600px;margin:0 auto}
 .page.active{display:block}
 
 /* Cards */
@@ -97,12 +97,12 @@ select{cursor:pointer}
 .log-table tr:last-child td{border-bottom:none}
 .log-table tr:nth-child(even) td{background:var(--light)}
 .log-table tr:hover td{background:#e8ecff}
-.rec-num{font-weight:700;color:var(--dark);font-size:13px}
+.rec-num{font-weight:700;color:var(--dark);font-size:13px;white-space:nowrap}
 .devices-cell{display:flex;gap:4px;flex-wrap:wrap}
 .dev-tag{background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600}
 
 /* Badge */
-.badge{display:inline-flex;align-items:center;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;white-space:nowrap}
 .b-green{background:var(--green);color:var(--green-t)}
 .b-amber{background:var(--amber);color:var(--amber-t)}
 .b-red{background:var(--red);color:var(--red-t)}
@@ -1176,6 +1176,7 @@ const AR_TO_EN=Object.freeze({
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
   "نسيت كلمة المرور؟":"Forgot password?",
+  "تنتهي اليوم":"Expires today",
   "ملاحظات الحركة":"Movement notes",
   "بحث في سجل الحركات":"Search the movement log",
   "بحث في المعايرة":"Search calibration",
@@ -1296,8 +1297,12 @@ function translateRuntimeText(value){
     [/^(\d+) جهاز$/,(_,n)=>`${n} devices`],
     [/^جهاز رقم (\d+)$/,(_,n)=>`Device ${n}`],
     [/^(\d+) يوم$/,(_,n)=>`${n} days`],
-    [/^متبقي (\d+) يوم$/,(_,n)=>`${n} days remaining`],
-    [/^منتهية منذ (\d+) يوم$/,(_,n)=>`Expired ${n} days ago`],
+    [/^متبقي (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`${n} days remaining`],
+    [/^متبقي يوم واحد$/,()=>`1 day remaining`],
+    [/^متبقي يومان$/,()=>`2 days remaining`],
+    [/^منتهية منذ (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`Expired ${n} days ago`],
+    [/^منتهية منذ يوم واحد$/,()=>`Expired 1 day ago`],
+    [/^منتهية منذ يومان$/,()=>`Expired 2 days ago`],
     [/^تم حفظ السجل (.+) في Supabase$/,(_,id)=>`Record ${id} saved to Supabase`],
     [/^تم حفظ التعديلات على (.+)$/,(_,id)=>`Changes saved for ${id}`],
     [/^تم تعديل الجهاز (.+) وحفظه في Supabase$/,(_,id)=>`Device ${id} updated and saved to Supabase`],
@@ -1824,11 +1829,21 @@ function escapeHTML(value) {
 
 function daysUntil(dateValue) {
   if(!dateValue) return null;
-  const target = new Date(dateValue + 'T23:59:59');
+  // Whole days from today to the expiry date: 0 on the expiry day itself, -1 the day after.
+  const target = new Date(dateValue + 'T00:00:00');
   if(Number.isNaN(target.getTime())) return null;
   const now = new Date();
   now.setHours(0,0,0,0);
-  return Math.ceil((target - now) / 86400000);
+  return Math.round((target - now) / 86400000);
+}
+
+// "3 أيام", "15 يومًا", "يومان"…; English is handled by translateRuntimeText.
+function arDays(n) {
+  n = Math.abs(n);
+  if(n === 1) return 'يوم واحد';
+  if(n === 2) return 'يومان';
+  if(n >= 3 && n <= 10) return `${n} أيام`;
+  return `${n} يومًا`;
 }
 
 function calibrationState(device) {
@@ -1843,11 +1858,16 @@ function calibrationState(device) {
   return {key:'valid',label:'سارية',badge:'b-green',days,color:'#155724'};
 }
 
+function calibrationDaysText(days) {
+  if(days === 0) return 'تنتهي اليوم';
+  return days < 0 ? `منتهية منذ ${arDays(days)}` : `متبقي ${arDays(days)}`;
+}
+
 function calibrationBadge(device) {
   const state = calibrationState(device);
-  const suffix = state.days !== null && state.days >= 0 && state.key !== 'valid'
-    ? ` · ${state.days} ${CURRENT_LANG==='en'?'days':'يوم'}` : '';
-  return `<span class="badge ${state.badge}">${translateRuntimeText(state.label)}${suffix}</span>`;
+  // One number only: the days left (the colour already shows the 60 / 30 / 7-day band).
+  const text = ['critical','urgent','soon'].includes(state.key) ? calibrationDaysText(state.days) : state.key==='expired' ? calibrationDaysText(state.days) : state.label;
+  return `<span class="badge ${state.badge}" title="${escapeHTML(translateRuntimeText(state.label))}">${escapeHTML(translateRuntimeText(text))}</span>`;
 }
 
 function formatDate(value) {
@@ -1921,7 +1941,7 @@ function renderDashboard() {
     return;
   }
   alertsEl.innerHTML = alerts.map(({device,state})=>{
-    const daysText = translateRuntimeText(state.days === null ? 'أكمل البيانات' : state.days < 0 ? `منتهية منذ ${Math.abs(state.days)} يوم` : `متبقي ${state.days} يوم`);
+    const daysText = translateRuntimeText(state.days === null ? 'أكمل البيانات' : calibrationDaysText(state.days));
     const serialText=translateRuntimeText(device.serial || 'بدون رقم تسلسلي');
     const locationText=translateRuntimeText(device.location);
     return `<div class="alert-row" style="--alert:${state.color}">
@@ -2625,7 +2645,7 @@ function doPrint() {
 function renderInventory() {
   const statColors = {متاح:'b-green','غير متاح':'b-red',محجوز:'b-amber','تحت الصيانة':'b-amber','خارج الخدمة':'b-gray',مباع:'b-gray','تم التحويل':'b-gray'};
   document.getElementById('inv-tbody').innerHTML = INVENTORY.map(d=>`<tr>
-    <td style="font-weight:700;color:var(--dark)">${escapeHTML(d.id)}</td>
+    <td style="font-weight:700;color:var(--dark);white-space:nowrap">${escapeHTML(d.id)}</td>
     <td>${escapeHTML(d.name)}</td>
     <td>${escapeHTML(d.type)}</td>
     <td style="color:var(--muted);font-size:12px">${escapeHTML(d.serial)}</td>
@@ -3196,7 +3216,7 @@ function renderDevicesMgmt() {
   tbody.innerHTML = devices.map(d => {
     const idx = INVENTORY.indexOf(d);
     return `<tr>
-    <td style="font-weight:700;color:var(--dark)">${escapeHTML(d.id)}</td>
+    <td style="font-weight:700;color:var(--dark);white-space:nowrap">${escapeHTML(d.id)}</td>
     <td>${escapeHTML(d.name)}</td>
     <td>${escapeHTML(d.type)}</td>
     <td style="color:var(--muted);font-size:12px">${escapeHTML(d.serial)}</td>
