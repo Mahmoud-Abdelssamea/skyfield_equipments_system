@@ -108,6 +108,9 @@ select{cursor:pointer}
 .b-red{background:var(--red);color:var(--red-t)}
 .b-gray{background:var(--gray);color:var(--muted)}
 .b-teal{background:var(--teal);color:var(--teal-t)}
+.b-orange{background:#FDE8D7;color:#9a4a07}
+.cell-sub{font-size:11.5px;font-weight:400;color:var(--muted);margin-top:3px}
+.b-purple{background:#EDE5F7;color:#5b3a8c}
 
 /* Edit modal */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:none;align-items:center;justify-content:center}
@@ -128,8 +131,8 @@ select{cursor:pointer}
 .print-footer-btns{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
 
 /* Search */
-.search-bar{display:flex;gap:10px;margin-bottom:18px}
-.search-bar input{flex:1;max-width:380px;background:#fff}
+.search-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+.search-bar input{flex:1 1 240px;max-width:380px;background:#fff}
 
 /* Toast */
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--dark);color:#fff;padding:12px 24px;border-radius:30px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
@@ -226,7 +229,7 @@ html{scroll-behavior:smooth}
 .dashboard-head h2{font-size:24px;color:var(--dark);margin-bottom:4px}
 .dashboard-head p{font-size:13px;color:var(--muted)}
 .dashboard-date{font-size:12px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:20px;padding:7px 13px;white-space:nowrap}
-.kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
 .kpi-card{background:#fff;border:1px solid rgba(197,202,233,.75);border-radius:14px;padding:17px;box-shadow:0 4px 16px rgba(15,52,96,.06);position:relative;overflow:hidden}
 .kpi-card:after{content:"";position:absolute;right:0;top:0;bottom:0;width:4px;background:var(--kpi,#0F3460)}
 .kpi-label{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:8px}
@@ -253,6 +256,7 @@ html{scroll-behavior:smooth}
 .empty-state{text-align:center;padding:38px 18px;color:var(--muted)}
 .empty-state .empty-icon{font-size:34px;margin-bottom:8px}
 .section-subtitle{font-size:11px;font-weight:400;opacity:.78;margin-right:4px}
+[data-kind][hidden]{display:none!important}
 .check-field{display:flex;align-items:center;gap:8px;min-height:42px;padding-top:19px}
 .check-field input{width:18px;height:18px;accent-color:var(--accent)}
 .check-field label{cursor:pointer;color:var(--text)}
@@ -393,6 +397,8 @@ html{scroll-behavior:smooth}
     <div class="kpi-card" style="--kpi:#0F3460"><div class="kpi-label">إجمالي الأجهزة</div><div class="kpi-value" id="kpi-total">0</div><div class="kpi-hint">جميع الأجهزة المسجلة</div></div>
     <div class="kpi-card" style="--kpi:#198754"><div class="kpi-label">متاحة</div><div class="kpi-value" id="kpi-available">0</div><div class="kpi-hint">جاهزة للتخصيص</div></div>
     <div class="kpi-card" style="--kpi:#E94560"><div class="kpi-label">في المواقع</div><div class="kpi-value" id="kpi-assigned">0</div><div class="kpi-hint">بعهدة مهندس أو مشروع</div></div>
+    <div class="kpi-card" style="--kpi:#E8610A"><div class="kpi-label">مؤجرة</div><div class="kpi-value" id="kpi-rented">0</div><div class="kpi-hint">عند عملاء</div></div>
+    <div class="kpi-card" style="--kpi:#6f42c1"><div class="kpi-label">في الصيانة</div><div class="kpi-value" id="kpi-maintenance">0</div><div class="kpi-hint">صيانة أو معايرة خارجية</div></div>
     <div class="kpi-card" style="--kpi:#856404"><div class="kpi-label">معايرة قريبة</div><div class="kpi-value" id="kpi-due">0</div><div class="kpi-hint">خلال 60 يومًا</div></div>
     <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">معايرة منتهية</div><div class="kpi-value" id="kpi-expired">0</div><div class="kpi-hint">تحتاج إجراء فوري</div></div>
   </div>
@@ -401,6 +407,10 @@ html{scroll-behavior:smooth}
     <div class="card">
       <div class="card-header">⚠️ تنبيهات المعايرة <span class="section-subtitle">الأقرب أولًا</span></div>
       <div class="card-body"><div class="alert-list" id="dashboard-alerts"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">🔁 الإيجار والصيانة <span class="section-subtitle">المتأخر أولًا</span></div>
+      <div class="card-body"><div class="alert-list" id="dashboard-outside"></div></div>
     </div>
     <div class="card">
       <div class="card-header">⚡ إجراءات سريعة</div>
@@ -436,7 +446,44 @@ html{scroll-behavior:smooth}
     <div class="card-header">👷 بيانات المستلم</div>
     <div class="card-body">
       <div class="fg">
-        <div class="field">
+        <div class="field full">
+          <label for="f-kind">نوع الحركة</label>
+          <select id="f-kind" onchange="onMovementKindChange()">
+            <option value="engineer">مهندس / المستودع</option>
+            <option value="rental">تأجير لعميل</option>
+            <option value="maintenance">صيانة أو معايرة خارجية</option>
+          </select>
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-party" id="f-party-label">اسم العميل (الشركة) <span class="req">*</span></label>
+          <input id="f-party" list="party-options" autocomplete="off">
+          <datalist id="party-options"></datalist>
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="f-contact">اسم المستلم لدى العميل</label>
+          <input id="f-contact" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="f-idno">رقم الإقامة / الهوية <span class="req">*</span></label>
+          <input id="f-idno" dir="ltr" inputmode="numeric" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-party-phone">رقم الجوال</label>
+          <input id="f-party-phone" dir="ltr" inputmode="tel" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-ref" id="f-ref-label">رقم العقد / أمر الشراء</label>
+          <input id="f-ref" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-expected">تاريخ الرجوع المتوقع <span class="req">*</span></label>
+          <input type="date" id="f-expected">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-escort">المهندس المرافق (اختياري)</label>
+          <select id="f-escort"></select>
+        </div>
+        <div class="field" data-kind="engineer">
           <label for="eng-srch-inp">اسم المستلم <span class="req">*</span></label>
           <div class="srch-wrap" id="eng-srch-wrap">
             <input class="srch-input" id="eng-srch-inp" placeholder="🔍 ابحث باسم المستلم..." autocomplete="off"
@@ -445,15 +492,19 @@ html{scroll-behavior:smooth}
             <div class="srch-list" id="eng-srch-list"></div>
           </div>
         </div>
-        <div class="field">
+        <div class="field" data-kind="engineer">
           <label for="f-empid">الرقم الوظيفي</label>
           <input id="f-empid" class="auto" readonly>
         </div>
-        <div class="field">
+        <div class="field" data-kind="engineer">
+          <label for="f-iqama">رقم الإقامة / الهوية</label>
+          <input id="f-iqama" class="auto" dir="ltr" readonly>
+        </div>
+        <div class="field" data-kind="engineer">
           <label for="f-nat">الجنسية</label>
           <input id="f-nat" class="auto" readonly>
         </div>
-        <div class="field">
+        <div class="field" data-kind="engineer">
           <label for="f-phone">رقم التليفون</label>
           <input id="f-phone" class="auto" readonly>
         </div>
@@ -539,7 +590,13 @@ html{scroll-behavior:smooth}
     <div class="card-body">
       <div class="search-bar no-print">
         <input id="log-search" aria-label="بحث في سجل الحركات" placeholder="🔍 بحث برقم السجل أو المستلم أو الجهاز..." oninput="renderLog()">
-        <button class="btn btn-ghost" onclick="document.getElementById('log-search').value='';renderLog()" style="font-size:13px;padding:8px 14px">مسح</button>
+        <select id="log-kind" aria-label="تصفية حسب نوع الحركة" onchange="renderLog()" style="max-width:200px">
+          <option value="all">كل أنواع الحركات</option>
+          <option value="engineer">مهندس / المستودع</option>
+          <option value="rental">تأجير لعميل</option>
+          <option value="maintenance">صيانة أو معايرة خارجية</option>
+        </select>
+        <button class="btn btn-ghost" onclick="document.getElementById('log-search').value='';document.getElementById('log-kind').value='all';renderLog()" style="font-size:13px;padding:8px 14px">مسح</button>
       </div>
       <div class="log-wrap">
         <table class="log-table cards-on-phone" id="log-table">
@@ -634,7 +691,8 @@ html{scroll-behavior:smooth}
           <option value="متاح">متاح</option>
           <option value="غير متاح">في موقع / بعهدة</option>
           <option value="محجوز">محجوز</option>
-          <option value="تحت الصيانة">تحت الصيانة</option>
+          <option value="مؤجر">مؤجر</option>
+          <option value="في الصيانة">في الصيانة</option>
           <option value="خارج الخدمة">خارج الخدمة</option>
         </select>
       </div>
@@ -700,6 +758,8 @@ html{scroll-behavior:smooth}
             <option>متاح</option>
             <option>غير متاح</option>
             <option>محجوز</option>
+            <option>مؤجر</option>
+            <option>في الصيانة</option>
             <option>تحت الصيانة</option>
             <option>خارج الخدمة</option>
           </select>
@@ -837,15 +897,43 @@ html{scroll-behavior:smooth}
     </div>
     <div class="modal-body">
       <div class="fg" style="margin-bottom:14px">
-        <div class="field">
+        <div class="field" data-kind="engineer">
           <label for="e-eng">اسم المستلم</label>
           <select id="e-eng" onchange="fillEditEng()">
             <option value="">— اختر —</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" data-kind="engineer">
           <label for="e-empid">الرقم الوظيفي</label>
           <input id="e-empid" class="auto" readonly>
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-party" id="e-party-label">اسم العميل (الشركة)</label>
+          <input id="e-party" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="e-contact">اسم المستلم لدى العميل</label>
+          <input id="e-contact" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="e-idno">رقم الإقامة / الهوية</label>
+          <input id="e-idno" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-party-phone">رقم الجوال</label>
+          <input id="e-party-phone" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-ref">المرجع (عقد / أمر شراء / RMA)</label>
+          <input id="e-ref" dir="ltr" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-expected">تاريخ الرجوع المتوقع</label>
+          <input type="date" id="e-expected">
+        </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-escort">المهندس المرافق (اختياري)</label>
+          <select id="e-escort"></select>
         </div>
         <div class="field">
           <label for="e-rdate">تاريخ الاستلام</label>
@@ -1176,6 +1264,43 @@ const AR_TO_EN=Object.freeze({
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
   "نسيت كلمة المرور؟":"Forgot password?",
+  "نوع الحركة":"Movement type",
+  "مهندس / المستودع":"Engineer / warehouse",
+  "تأجير لعميل":"Rental to a client",
+  "صيانة أو معايرة خارجية":"Outside maintenance or calibration",
+  "اسم العميل (الشركة)":"Client name (company)",
+  "جهة الصيانة أو المعايرة":"Maintenance or calibration provider",
+  "اسم المستلم لدى العميل":"Client's receiving person",
+  "رقم الجوال":"Mobile number",
+  "رقم العقد / أمر الشراء":"Contract / PO number",
+  "رقم أمر العمل / RMA":"Job order / RMA number",
+  "تاريخ الرجوع المتوقع":"Expected return date",
+  "المهندس المرافق (اختياري)":"Accompanying engineer (optional)",
+  "المرجع (عقد / أمر شراء / RMA)":"Reference (contract / PO / RMA)",
+  "— بدون —":"— None —",
+  "مهندس":"Engineer",
+  "تأجير":"Rental",
+  "صيانة / معايرة":"Maintenance / calibration",
+  "إقامة":"Iqama",
+  "مرجع":"Ref",
+  "اكتب اسم العميل أو الجهة":"Enter the client or provider name",
+  "هذا الاسم في قائمة المستلمين؛ اختر نوع الحركة «مهندس»":"This name is on the recipients list; choose the Engineer movement type",
+  "رقم الإقامة أو الهوية مطلوب للتأجير":"An Iqama or ID number is required for rentals",
+  "تاريخ الرجوع المتوقع مطلوب":"The expected return date is required",
+  "تاريخ الرجوع المتوقع قبل تاريخ الاستلام":"The expected return date is before the assignment date",
+  "نوع الحركة غير معروف":"Unknown movement type",
+  "تصفية حسب نوع الحركة":"Filter by movement type",
+  "كل أنواع الحركات":"All movement types",
+  "مؤجرة":"Rented",
+  "عند عملاء":"With clients",
+  "مؤجر":"Rented",
+  "في الصيانة":"In maintenance",
+  "🔁 الإيجار والصيانة":"🔁 Rentals and maintenance",
+  "الإيجار والصيانة":"Rentals and maintenance",
+  "المتأخر أولًا":"Overdue first",
+  "لا توجد أجهزة مؤجرة أو في الصيانة":"No devices are rented or in maintenance",
+  "بدون تاريخ رجوع":"No return date",
+  "يرجع اليوم":"Due back today",
   "تنتهي اليوم":"Expires today",
   "ملاحظات الحركة":"Movement notes",
   "بحث في سجل الحركات":"Search the movement log",
@@ -1299,6 +1424,14 @@ function translateRuntimeText(value){
     [/^(\d+) يوم$/,(_,n)=>`${n} days`],
     [/^متبقي (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`${n} days remaining`],
     [/^متبقي يوم واحد$/,()=>`1 day remaining`],
+    [/^متأخر (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`${n} days overdue`],
+    [/^متأخر يوم واحد$/,()=>`1 day overdue`],
+    [/^متأخر يومان$/,()=>`2 days overdue`],
+    [/^يرجع خلال (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`Due back in ${n} days`],
+    [/^يرجع خلال يوم واحد$/,()=>`Due back in 1 day`],
+    [/^يرجع خلال يومان$/,()=>`Due back in 2 days`],
+    [/^متوقع: (.+)$/,(_,d)=>`Expected: ${d}`],
+    [/^رجع (.+) من الصيانة\. هل تريد تحديث تاريخ المعايرة ورفع الشهادة الآن؟$/,(_,ids)=>`${ids} came back from maintenance. Update the calibration date and upload the certificate now?`],
     [/^متبقي يومان$/,()=>`2 days remaining`],
     [/^منتهية منذ (\d+) (?:يوم|أيام|يومًا)$/,(_,n)=>`Expired ${n} days ago`],
     [/^منتهية منذ يوم واحد$/,()=>`Expired 1 day ago`],
@@ -1496,6 +1629,8 @@ function dbRecordToLocal(row) {
     status:row.movement_type,rdate:row.received_date||'',rtime:row.received_time||'',
     ddate:row.delivered_date||'',dtime:row.delivered_time||'',
     notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[],
+    kind:row.destination_type||'engineer',ref:row.reference_no||'',expectedReturn:row.expected_return||'',
+    escort:row.escort||'',contact:row.contact_name||'',idNumber:row.id_number||'',
     updatedAt:row.updated_at||'',createdAt:row.created_at||''
   };
 }
@@ -1570,7 +1705,9 @@ function rpcErrorMessage(error){
     MOVEMENT_CHANGED:'عُدّلت هذه الحركة من مستخدم آخر. تم تحديث البيانات، افتحها من جديد.',MOVEMENT_NOT_FOUND:'الحركة غير موجودة (ربما حُذفت). تم تحديث البيانات.',
     RECIPIENT_HAS_DEVICES:`لا يمكن حذف المستلم لأن معه ${arg||''} جهاز. سجّل استلامها أولًا.`,NAME_EXISTS:'يوجد مستلم بنفس الاسم',NAME_RESERVED:'هذا الاسم محجوز لمدير المخزن',
     DEVICE_CONFLICT:'عُدّل الجهاز من مستخدم آخر منذ فتحت النافذة. تم تحديث البيانات، افتح الجهاز من جديد.',DEVICE_EXISTS:'رقم الجهاز موجود مسبقاً',
-    DEVICE_WITH_PERSON:'لا يمكن حذف جهاز عند مستخدم',RECIPIENT_REQUIRED:'الرجاء اختيار المستلم',DEVICES_REQUIRED:'الرجاء اختيار جهاز واحد على الأقل'};
+    DEVICE_WITH_PERSON:'لا يمكن حذف جهاز عند مستخدم',RECIPIENT_REQUIRED:'الرجاء اختيار المستلم',DEVICES_REQUIRED:'الرجاء اختيار جهاز واحد على الأقل',
+    PARTY_REQUIRED:'اكتب اسم العميل أو الجهة',PARTY_IS_RECIPIENT:'هذا الاسم في قائمة المستلمين؛ اختر نوع الحركة «مهندس»',
+    EXPECTED_RETURN_REQUIRED:'تاريخ الرجوع المتوقع مطلوب',ID_NUMBER_REQUIRED:'رقم الإقامة أو الهوية مطلوب للتأجير',INVALID_DESTINATION:'نوع الحركة غير معروف'};
   if(m[code])return m[code];
   if(/sf_devices_serial_unique|duplicate key/i.test(text))return 'الرقم التسلسلي مستخدم لجهاز آخر';
   return text||'تعذر الحفظ في Supabase';
@@ -1922,10 +2059,13 @@ function renderDashboard() {
   const total = INVENTORY.length;
   const available = INVENTORY.filter(d=>d.status==='متاح').length;
   const assigned = INVENTORY.filter(d=>d.status==='غير متاح').length;
+  const rented = INVENTORY.filter(d=>d.status==='مؤجر').length;
+  const maintenance = INVENTORY.filter(d=>d.status==='في الصيانة').length;
   const states = INVENTORY.map(d=>calibrationState(d));
   const due = states.filter(s=>['critical','urgent','soon'].includes(s.key)).length;
   const expired = states.filter(s=>s.key==='expired').length;
-  const values = {total,available,assigned,due,expired};
+  const values = {total,available,assigned,rented,maintenance,due,expired};
+  renderOutsideDevices();
   Object.entries(values).forEach(([key,value])=>{ const el=document.getElementById('kpi-'+key); if(el) el.textContent=value; });
 
   const dateEl = document.getElementById('dashboard-date');
@@ -1948,6 +2088,38 @@ function renderDashboard() {
       <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(device.id)} — ${escapeHTML(device.name)}</div>
       <div class="alert-sub">${escapeHTML(serialText)} · ${escapeHTML(locationText)}</div></div>
       <span class="alert-days">${daysText}</span></div>`;
+  }).join('');
+}
+
+// Devices with a client or an outside provider, with the latest rental / maintenance movement that sent them there.
+function outsideDevices() {
+  const recNo = r => parseInt((String(r.id).match(/(\d+)$/)||[])[1]||'0',10);
+  return INVENTORY.filter(d => d.status==='مؤجر' || d.status==='في الصيانة').map(device => {
+    const movement = RECORDS.filter(r => (r.kind==='rental'||r.kind==='maintenance') && r.engineer===device.holder && (r.devices||[]).some(x=>x.id===device.id))
+      .sort((a,b)=>recNo(b)-recNo(a))[0] || null;
+    const days = movement && movement.expectedReturn ? daysUntil(movement.expectedReturn) : null;
+    return {device, movement, days};
+  }).sort((a,b)=>(a.days ?? 99999)-(b.days ?? 99999));
+}
+
+function outsideDaysText(days) {
+  if(days === null) return 'بدون تاريخ رجوع';
+  if(days === 0) return 'يرجع اليوم';
+  return days < 0 ? `متأخر ${arDays(days)}` : `يرجع خلال ${arDays(days)}`;
+}
+
+function renderOutsideDevices() {
+  const el = document.getElementById('dashboard-outside');
+  if(!el) return;
+  const rows = outsideDevices();
+  if(!rows.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div>${escapeHTML(translateRuntimeText('لا توجد أجهزة مؤجرة أو في الصيانة'))}</div></div>`; return; }
+  el.innerHTML = rows.slice(0,8).map(({device,movement,days}) => {
+    const color = days === null ? '#777' : days < 0 ? '#b02a37' : days <= 3 ? '#856404' : '#0c5460';
+    const sub = [translateRuntimeText(device.status), device.holder, movement?.ref].filter(Boolean).join(' · ');
+    return `<div class="alert-row" style="--alert:${color}">
+      <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(device.id)} — ${escapeHTML(device.name)}</div>
+      <div class="alert-sub">${escapeHTML(sub)}</div></div>
+      <span class="alert-days">${escapeHTML(translateRuntimeText(outsideDaysText(days)))}</span></div>`;
   }).join('');
 }
 
@@ -2136,11 +2308,40 @@ function fillEng() {
   const name = document.getElementById('f-eng').value || document.getElementById('eng-srch-inp').value;
   const eng = ENGINEERS.find(e=>e.name===name)||{};
   document.getElementById('f-empid').value = eng.empid||'';
+  document.getElementById('f-iqama').value = eng.iqama||'';
   document.getElementById('f-nat').value = eng.nat||'';
   document.getElementById('f-phone').value = eng.phone||'';
   const isManager = name === 'مدير المخزن (صالح)';
   const statusSel = document.getElementById('f-status');
   statusSel.value = isManager ? 'تسليم' : 'استلام';
+  updateTimeFieldsByStatus();
+}
+
+// ── Movement kind: engineer, rental to a client, or outside maintenance / calibration ──
+const MOVEMENT_KINDS = {engineer:'مهندس', rental:'تأجير', maintenance:'صيانة / معايرة'};
+function movementKind() { return document.getElementById('f-kind').value || 'engineer'; }
+function showKindFields(root, kind) {
+  root.querySelectorAll('[data-kind]').forEach(el => { el.hidden = !el.dataset.kind.split(' ').includes(kind); });
+}
+// Names already used for rentals or maintenance, offered while typing.
+function outsidePartyNames(kind) {
+  return [...new Set(RECORDS.filter(r => r.kind === kind).map(r => r.engineer).filter(Boolean))].sort((a,b) => a.localeCompare(b,'ar'));
+}
+function fillEscortOptions(select, value='') {
+  select.innerHTML = `<option value="">${escapeHTML(translateRuntimeText('— بدون —'))}</option>` +
+    ENGINEERS.filter(e => e.name !== WAREHOUSE_HOLDER).map(e => `<option value="${escapeHTML(e.name)}">${escapeHTML(e.name)}</option>`).join('');
+  select.value = value;
+}
+function onMovementKindChange() {
+  const kind = movementKind();
+  showKindFields(document.getElementById('page-form'), kind);
+  if(kind === 'engineer') { fillEng(); return; }
+  document.getElementById('f-party-label').innerHTML = escapeHTML(translateRuntimeText(kind === 'rental' ? 'اسم العميل (الشركة)' : 'جهة الصيانة أو المعايرة')) + ' <span class="req">*</span>';
+  document.getElementById('f-ref-label').textContent = translateRuntimeText(kind === 'rental' ? 'رقم العقد / أمر الشراء' : 'رقم أمر العمل / RMA');
+  document.getElementById('party-options').innerHTML = outsidePartyNames(kind).map(n => `<option value="${escapeHTML(n)}"></option>`).join('');
+  fillEscortOptions(document.getElementById('f-escort'), document.getElementById('f-escort').value);
+  // Going out to a client or provider is always an assignment.
+  document.getElementById('f-status').value = 'استلام';
   updateTimeFieldsByStatus();
 }
 
@@ -2327,8 +2528,15 @@ function formatMovementDateTime(date,time) {
 // ── Save record ───────────────────────────────────────────────
 async function saveRecord() {
   if(!requireEditPermission())return;
-  const eng = document.getElementById('f-eng').value;
-  if(!eng){toast('⚠️ الرجاء اختيار المستلم');return;}
+  const kind = movementKind(), val = id => document.getElementById(id).value.trim();
+  const eng = kind === 'engineer' ? document.getElementById('f-eng').value : val('f-party');
+  if(!eng){toast(kind === 'engineer' ? '⚠️ الرجاء اختيار المستلم' : '⚠️ اكتب اسم العميل أو الجهة');return;}
+  if(kind !== 'engineer') {
+    if(eng === WAREHOUSE_HOLDER || ENGINEERS.some(e => e.name === eng)){toast('⚠️ هذا الاسم في قائمة المستلمين؛ اختر نوع الحركة «مهندس»');return;}
+    if(kind === 'rental' && !val('f-idno')){toast('⚠️ رقم الإقامة أو الهوية مطلوب للتأجير');return;}
+    if(!val('f-expected')){toast('⚠️ تاريخ الرجوع المتوقع مطلوب');return;}
+    if(val('f-rdate') && val('f-expected') < val('f-rdate')){toast('⚠️ تاريخ الرجوع المتوقع قبل تاريخ الاستلام');return;}
+  }
   const devs = getSelectedDevices();
   if(!devs.length){toast('⚠️ الرجاء اختيار جهاز واحد على الأقل');return;}
   if(new Set(devs.map(d=>d.id)).size !== devs.length){toast('⚠️ لا يمكن اختيار الجهاز نفسه أكثر من مرة');return;}
@@ -2336,9 +2544,12 @@ async function saveRecord() {
   if(movementStatus==='استلام'&&!document.getElementById('f-rdate').value){toast('⚠️ تاريخ الاستلام مطلوب');return;}
   if(movementStatus==='تسليم'&&!document.getElementById('f-ddate').value){toast('⚠️ تاريخ التسليم مطلوب');return;}
   if(devs.every(d=>(d.holder||WAREHOUSE_HOLDER)===eng)){toast('⚠️ الأجهزة المختارة مسجلة بالفعل باسم المستلم');return;}
+  const out = kind !== 'engineer';
   const item={clientId:newClientId(),createdAt:new Date().toISOString(),payload:{
-    engineer:eng,empid:document.getElementById('f-empid').value,nationality:document.getElementById('f-nat').value,
-    phone:document.getElementById('f-phone').value,location:document.getElementById('f-loc').value,movement_type:movementStatus,
+    engineer:eng,destination_type:kind,empid:out?'':document.getElementById('f-empid').value,nationality:out?'':document.getElementById('f-nat').value,
+    phone:out?val('f-party-phone'):document.getElementById('f-phone').value,location:document.getElementById('f-loc').value,movement_type:movementStatus,
+    contact_name:out?val('f-contact'):'',id_number:out?val('f-idno'):'',reference_no:out?val('f-ref'):'',
+    expected_return:out?val('f-expected'):'',escort:out?document.getElementById('f-escort').value:'',
     received_date:document.getElementById('f-rdate').value,received_time:document.getElementById('f-rtime').value,
     delivered_date:document.getElementById('f-ddate').value,delivered_time:document.getElementById('f-dtime').value,
     notes:document.getElementById('f-notes').value,
@@ -2348,7 +2559,12 @@ async function saveRecord() {
   const res=await sendPendingMovement(item);
   if(!res.error){
     toast('✅ تم حفظ السجل '+res.data.movement.record_no+' في Supabase');
-    resetForm();refreshAfterSave();return;
+    resetForm();refreshAfterSave();
+    // Back from outside maintenance: offer to enter the new calibration date and certificate.
+    const fromLab = eng === WAREHOUSE_HOLDER ? devs.filter(d => d.status === 'في الصيانة' && d.calibrationRequired) : [];
+    if(fromLab.length && localizedConfirm(`رجع ${fromLab.map(d=>d.id).join('، ')} من الصيانة. هل تريد تحديث تاريخ المعايرة ورفع الشهادة الآن؟`))
+      openDeviceModal(INVENTORY.findIndex(d => d.id === fromLab[0].id));
+    return;
   }
   if(res.transient){
     // No connection: keep it here and send it when the connection is back (sending twice is ignored by the database).
@@ -2365,8 +2581,12 @@ function resetForm() {
   document.getElementById('f-eng').value='';
   document.getElementById('eng-srch-inp').value='';
   document.getElementById('f-empid').value='';
+  document.getElementById('f-iqama').value='';
   document.getElementById('f-nat').value='';
   document.getElementById('f-phone').value='';
+  ['f-party','f-contact','f-idno','f-party-phone','f-ref','f-expected','f-escort'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('f-kind').value='engineer';
+  showKindFields(document.getElementById('page-form'),'engineer');
   document.getElementById('f-notes').value='';
   document.getElementById('f-ddate').value='';
   document.getElementById('f-dtime').value='';
@@ -2388,6 +2608,16 @@ function statusBadge(s) {
   return `<span class="badge ${m[s]||'b-gray'}">${escapeHTML(s)}</span>`;
 }
 
+// Recipient column: the name, and for rentals / maintenance a badge, the renter, Iqama and reference.
+function recipientCell(r) {
+  const kind = r.kind || 'engineer';
+  // One wrapper so the phone card keeps name and details together in its value column.
+  if(kind === 'engineer') return `<div>${escapeHTML(r.engineer)}${r.idNumber ? `<div class="cell-sub" dir="ltr">${escapeHTML(r.idNumber)}</div>` : ''}</div>`;
+  const details = [r.contact, r.idNumber && translateRuntimeText('إقامة')+': '+r.idNumber, r.ref && translateRuntimeText('مرجع')+': '+r.ref].filter(Boolean);
+  return `<div><span class="badge ${kind==='rental'?'b-orange':'b-purple'}">${escapeHTML(translateRuntimeText(MOVEMENT_KINDS[kind]))}</span> ${escapeHTML(r.engineer)}`
+    + (details.length ? `<div class="cell-sub">${escapeHTML(details.join(' · '))}</div>` : '') + '</div>';
+}
+
 // ── Render log ─────────────────────────────────────────────────
 function renderLog() {
   RECORDS.forEach(r => {
@@ -2397,12 +2627,14 @@ function renderLog() {
     if(!Array.isArray(r.devices)) r.devices = [];
   });
   const q = (document.getElementById('log-search').value||'').toLowerCase();
-  const filtered = RECORDS.filter(r=>
+  const kindFilter = document.getElementById('log-kind')?.value || 'all';
+  const filtered = RECORDS.filter(r=>(kindFilter==='all'||(r.kind||'engineer')===kindFilter)&&(
     r.id.toLowerCase().includes(q) ||
     r.engineer.toLowerCase().includes(q) ||
     getRecordDeliveredBy(r).toLowerCase().includes(q) ||
+    [r.ref,r.contact,r.idNumber].some(v=>(v||'').toLowerCase().includes(q)) ||
     r.devices.some(d=>d.id&&d.id.toLowerCase().includes(q)||d.name&&d.name.toLowerCase().includes(q))
-  );
+  ));
   // Newest record number first (REC-049 before REC-048).
   const recNo=r=>parseInt((r.id.match(/(\d+)$/)||[])[1]||'0',10);
   filtered.sort((a,b)=>recNo(b)-recNo(a));
@@ -2431,10 +2663,10 @@ function renderLog() {
       <td class="rec-num">${escapeHTML(r.id)}</td>
       <td>${escapeHTML(formatStoredDate(r.date))}</td>
       <td style="font-weight:500">${escapeHTML(getRecordDeliveredBy(r)||'—')}</td>
-      <td style="font-weight:500">${escapeHTML(r.engineer)}</td>
+      <td style="font-weight:500">${recipientCell(r)}</td>
       <td><div class="devices-cell">${devTags}</div></td>
       <td>${formatMovementDateTime(r.rdate,r.rtime)}</td>
-      <td>${formatMovementDateTime(r.ddate,r.dtime)}</td>
+      <td>${r.kind&&r.kind!=='engineer'&&!r.ddate&&r.expectedReturn?escapeHTML(translateRuntimeText('متوقع: '+formatStoredDate(r.expectedReturn))):formatMovementDateTime(r.ddate,r.dtime)}</td>
       <td>${escapeHTML(r.location)}</td>
       <td>${statusBadge(r.status)}</td>
       <td class="no-print">
@@ -2475,7 +2707,19 @@ function openEdit(idx) {
   document.getElementById('e-loc').value = r.location;
   document.getElementById('e-status').value = r.status;
   document.getElementById('e-notes').value = r.notes;
-  fillEditEng();
+  const kind = r.kind || 'engineer';
+  showKindFields(document.getElementById('edit-modal'), kind);
+  if(kind === 'engineer') fillEditEng();
+  else {
+    document.getElementById('e-party-label').textContent = translateRuntimeText(kind === 'rental' ? 'اسم العميل (الشركة)' : 'جهة الصيانة أو المعايرة');
+    document.getElementById('e-party').value = r.engineer;
+    document.getElementById('e-contact').value = r.contact||'';
+    document.getElementById('e-idno').value = r.idNumber||'';
+    document.getElementById('e-party-phone').value = r.phone||'';
+    document.getElementById('e-ref').value = r.ref||'';
+    document.getElementById('e-expected').value = r.expectedReturn||'';
+    fillEscortOptions(document.getElementById('e-escort'), r.escort||'');
+  }
   // show devices as tags
   document.getElementById('e-devices-list').innerHTML =
     r.devices.map(d=>`<span class="dev-tag" style="font-size:12px;padding:4px 10px">${escapeHTML(d.id)} — ${escapeHTML(d.name)}</span>`).join('');
@@ -2492,6 +2736,14 @@ async function saveEdit() {
     received_date:document.getElementById('e-rdate').value,received_time:document.getElementById('e-rtime').value,
     delivered_date:document.getElementById('e-ddate').value,delivered_time:document.getElementById('e-dtime').value,
     location:document.getElementById('e-loc').value,movement_type:document.getElementById('e-status').value,notes:document.getElementById('e-notes').value};
+  if((r.kind||'engineer') !== 'engineer') {
+    const val = id => document.getElementById(id).value.trim();
+    if(!val('e-party')){toast('⚠️ اكتب اسم العميل أو الجهة');return;}
+    if(r.kind === 'rental' && !val('e-idno')){toast('⚠️ رقم الإقامة أو الهوية مطلوب للتأجير');return;}
+    if(!val('e-expected')){toast('⚠️ تاريخ الرجوع المتوقع مطلوب');return;}
+    Object.assign(changes, {engineer:val('e-party'), empid:'', contact_name:val('e-contact'), id_number:val('e-idno'), phone:val('e-party-phone'),
+      reference_no:val('e-ref'), expected_return:val('e-expected'), escort:document.getElementById('e-escort').value});
+  }
   // Notes, dates and times can always change; the recipient or location only on the latest movement of its devices.
   const res=await callRpc('sf_update_movement',{p_record_no:r.id,p_changes:changes,p_expected_updated_at:r.updatedAt||null});
   if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم تُحفظ التعديلات':rpcErrorMessage(res.error)));if(!res.transient&&!/MOVEMENT_NOT_LATEST/.test(String(res.error?.message))){closeEdit();await syncFromCloud();}return;}
@@ -2514,6 +2766,22 @@ async function deleteRecord() {
 }
 
 // ── Print helpers ──────────────────────────────────────────────
+// Renter / provider block on the printed form (and the engineer's Iqama on engineer movements).
+function printOutsideDetails(r) {
+  const kind = r.kind || 'engineer';
+  const items = kind === 'engineer'
+    ? [['رقم الإقامة / الهوية', r.idNumber]]
+    : [['نوع الحركة', MOVEMENT_KINDS[kind]], ['اسم المستلم لدى العميل', r.contact], ['رقم الإقامة / الهوية', r.idNumber], ['رقم الجوال', r.phone],
+       ['المرجع', r.ref], ['تاريخ الرجوع المتوقع', r.expectedReturn && formatStoredDate(r.expectedReturn)], ['المهندس المرافق', r.escort]];
+  const shown = items.filter(([,value]) => value);
+  if(!shown.length) return '';
+  const cell = ([label,value]) => `<div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">${escapeHTML(label)}</div><div style="font-size:14px;font-weight:600">${escapeHTML(value)}</div></div>`;
+  return `<div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">${escapeHTML(kind === 'engineer' ? 'بيانات المستلم' : kind === 'rental' ? 'بيانات التأجير' : 'بيانات الصيانة / المعايرة')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">${shown.map(cell).join('')}</div>
+    </div>`;
+}
+
 function buildPrintHTML(r) {
   const deliveredBy = getRecordDeliveredBy(r)||'—';
   const devRows = r.devices.map(d=>`
@@ -2557,6 +2825,8 @@ function buildPrintHTML(r) {
         <div style="padding:9px 12px"><div style="font-size:10px;color:#999">الحالة</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.status)}</div></div>
       </div>
     </div>
+
+    ${printOutsideDetails(r)}
 
     <div style="margin-bottom:16px">
       <div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">التاريخ والتوقيت</div>
@@ -2643,7 +2913,7 @@ function doPrint() {
 
 // ── Inventory render ───────────────────────────────────────────
 function renderInventory() {
-  const statColors = {متاح:'b-green','غير متاح':'b-red',محجوز:'b-amber','تحت الصيانة':'b-amber','خارج الخدمة':'b-gray',مباع:'b-gray','تم التحويل':'b-gray'};
+  const statColors = {متاح:'b-green','غير متاح':'b-red',محجوز:'b-amber','تحت الصيانة':'b-amber','في الصيانة':'b-purple','مؤجر':'b-orange','خارج الخدمة':'b-gray',مباع:'b-gray','تم التحويل':'b-gray'};
   document.getElementById('inv-tbody').innerHTML = INVENTORY.map(d=>`<tr>
     <td style="font-weight:700;color:var(--dark);white-space:nowrap">${escapeHTML(d.id)}</td>
     <td>${escapeHTML(d.name)}</td>
@@ -2661,12 +2931,12 @@ function buildWorkbook() {
   const wb = XLSX.utils.book_new();
 
   // Log sheet
-  const logData = [["رقم السجل","التاريخ","المُسلِّم","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","تاريخ الاستلام","وقت الاستلام","تاريخ التسليم","وقت التسليم","الموقع","الحالة","ملاحظات"]];
+  const logData = [["رقم السجل","التاريخ","المُسلِّم","المستلم","الرقم الوظيفي","الجنسية","رقم التليفون","الأجهزة","تاريخ الاستلام","وقت الاستلام","تاريخ التسليم","وقت التسليم","الموقع","الحالة","ملاحظات","نوع الحركة","اسم المستلم لدى العميل","رقم الإقامة / الهوية","المرجع","تاريخ الرجوع المتوقع","المهندس المرافق"]];
   RECORDS.forEach(r=>{
-    logData.push([r.id,r.date,getRecordDeliveredBy(r),r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rdate||'',r.rtime||'',r.ddate||'',r.dtime||'',r.location,r.status,r.notes||'']);
+    logData.push([r.id,r.date,getRecordDeliveredBy(r),r.engineer,r.empid||'',r.nat||'',r.phone||'',r.devices.map(d=>d.id).join('، '),r.rdate||'',r.rtime||'',r.ddate||'',r.dtime||'',r.location,r.status,r.notes||'',MOVEMENT_KINDS[r.kind||'engineer'],r.contact||'',r.idNumber||'',r.ref||'',r.expectedReturn||'',r.escort||'']);
   });
   const ws1 = XLSX.utils.aoa_to_sheet(logData);
-  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:14},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:24}];
+  ws1['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:28},{wch:12},{wch:12},{wch:14},{wch:22},{wch:14},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:24},{wch:16},{wch:22},{wch:18},{wch:18},{wch:16},{wch:22}];
   XLSX.utils.book_append_sheet(wb,ws1,"سجل الاستلام");
 
   // Inventory sheet
@@ -3215,7 +3485,7 @@ function selectDev(n, id) {
 let deviceEditIdx = null;
 
 function renderDevicesMgmt() {
-  const statColors = {'متاح':'b-green','غير متاح':'b-red','محجوز':'b-amber','تحت الصيانة':'b-amber','خارج الخدمة':'b-gray'};
+  const statColors = {'متاح':'b-green','غير متاح':'b-red','محجوز':'b-amber','تحت الصيانة':'b-amber','في الصيانة':'b-purple','مؤجر':'b-orange','خارج الخدمة':'b-gray'};
   const tbody = document.getElementById('devices-mgmt-tbody');
   if(!tbody) return;
   const q = (document.getElementById('device-search')?.value || '').trim().toLowerCase();
@@ -3377,7 +3647,7 @@ async function saveDevice() {
 async function deleteDevice(idx) {
   if(!requireEditPermission())return;
   const d = INVENTORY[idx];
-  if(d.status === 'غير متاح'){toast('لا يمكن حذف جهاز عند مستخدم');return;}
+  if(['غير متاح','مؤجر','في الصيانة'].includes(d.status)){toast('لا يمكن حذف جهاز عند مستخدم');return;}
   if(!localizedConfirm('هل أنت متأكد من حذف الجهاز ' + d.id + '?')) return;
   const res=await callRpc('sf_delete_device',{p_code:d.id});
   if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم يُحذف الجهاز':rpcErrorMessage(res.error)));return;}
