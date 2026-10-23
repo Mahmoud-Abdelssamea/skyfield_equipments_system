@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام متابعة الأجهزة</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="xlsx-0.20.3.full.min.js"></script>
+<script src="supabase-js-2.117.2.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -184,6 +184,7 @@ select{cursor:pointer}
 body.role-viewer .btn-save,body.role-viewer .btn-edit,body.role-viewer .btn-del,body.role-viewer .btn-danger,body.role-viewer .edit-only{display:none!important}
 .viewer-note{display:none;align-items:flex-start;gap:9px;margin-bottom:14px;padding:11px 13px;border:1px solid #ffe69c;border-radius:9px;background:#fff8db;color:#664d03;font-size:12px;line-height:1.7}
 body.role-viewer .viewer-note{display:flex}
+body:not(.role-admin) .admin-only{display:none!important}
 
 /* ── Searchable Dropdown ───────────────────────────────────── */
 .srch-wrap{position:relative;width:100%;}
@@ -289,7 +290,6 @@ html{scroll-behavior:smooth}
     </div>
     <button class="login-btn" onclick="doLogin()">دخول</button>
     <div class="login-err" id="login-err"></div>
-    <button class="login-config" onclick="openSupabaseSettings()">⚙️ إعداد اتصال Supabase</button>
   </div>
 </div>
 
@@ -307,7 +307,7 @@ html{scroll-behavior:smooth}
     <button class="lang-switch" data-language-control onclick="toggleLanguage()">English</button>
     <span id="sync-badge" style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;background:#FFF3CD;color:#856404">غير متصل</span>
     <button onclick="syncAllData().then(ok=>{if(ok){updateRecId();renderInventory();renderLog();}})" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🔄 مزامنة</button>
-    <button onclick="openSupabaseSettings()" style="background:#E94560;border:none;color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">⚙️ Supabase</button>
+    <button class="admin-only" onclick="openSupabaseSettings()" style="background:#E94560;border:none;color:#fff;font-size:11px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit">⚙️ Supabase</button>
     <span class="badge b-teal" id="user-role-badge">—</span>
     <span class="badge" id="total-lbl">0 سجل</span>
     <button onclick="logout()" title="تسجيل الخروج" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;font-size:11px;padding:4px 10px;border-radius:20px;cursor:pointer;font-family:inherit">خروج</button>
@@ -1296,6 +1296,7 @@ function canEdit(){return CURRENT_ROLE==='admin'||CURRENT_ROLE==='storekeeper';}
 function requireEditPermission(){if(canEdit())return true;toast('هذه العملية متاحة للمدير أو أمين المخزن فقط');return false;}
 function applyRolePermissions(){
   document.body.classList.toggle('role-viewer',!canEdit());
+  document.body.classList.toggle('role-admin',CURRENT_ROLE==='admin');
   const badge=document.getElementById('user-role-badge');
   if(badge)badge.textContent=({admin:'مدير',storekeeper:'أمين مخزن',viewer:'مشاهدة'}[CURRENT_ROLE]||CURRENT_ROLE);
 }
@@ -1473,7 +1474,13 @@ async function syncFromCloud() {
     const engineers=throwIfSupabaseError(engineersResult,'المهندسون')||[];
     const locations=throwIfSupabaseError(locationsResult,'المواقع')||[];
     const profile=throwIfSupabaseError(profileResult,'صلاحيات المستخدم');
-    CURRENT_ROLE=profile?.active===false?'viewer':(profile?.role||'viewer');
+    if(!profile||profile.active!==true){
+      CURRENT_ROLE='viewer';applyRolePermissions();clearLocalData();renderAfterClear();
+      showSyncBadge('الحساب غير مفعّل','#721c24','#F8D7DA');
+      toast('حسابك غير مفعّل بعد. اطلب من المدير تفعيله.');
+      return false;
+    }
+    CURRENT_ROLE=profile.role||'viewer';
     applyRolePermissions();
     const remoteEmpty=!movements.length&&!devices.length&&!engineers.length;
     const localHasData=localSnapshot.records.length||localSnapshot.inventory.length||localSnapshot.engineers.some(e=>e.name!=='مدير المخزن (صالح)');
@@ -1555,6 +1562,8 @@ function showSyncBadge(text,color,bg){
 }
 
 function openSupabaseSettings(){
+  // Only an administrator may point this browser at another database (or nobody can sign in at all yet).
+  if(CURRENT_ROLE!=='admin'&&getSupabaseClient()){toast('إعداد الاتصال متاح للمدير فقط');return;}
   document.getElementById('sp-url').value=SUPABASE_URL;
   document.getElementById('sp-key').value=SUPABASE_ANON_KEY;
   document.getElementById('sp-test-result').textContent='';
@@ -1696,7 +1705,7 @@ function formatDate(value) {
 
 function safeCertificateLink(device) {
   if(device.certificatePath) {
-    return `<button class="cert-link" style="border:none;background:none;cursor:pointer;font-family:inherit" onclick="openCertificate('${encodeURIComponent(device.id)}')">عرض الشهادة ↗</button>`;
+    return `<button class="cert-link" style="border:none;background:none;cursor:pointer;font-family:inherit" onclick="openCertificate('${encodeURIComponent(device.id).replace(/'/g,'%27')}')">عرض الشهادة ↗</button>`;
   }
   const url = String(device.certificateUrl || '').trim();
   if(!/^https?:\/\//i.test(url)) return '<span style="color:var(--muted);font-size:11px">غير مرفقة</span>';
@@ -2134,7 +2143,7 @@ function formatMovementDateTime(date,time) {
     const parts=String(date).split('-');
     formattedDate=parts.length===3?`${parts[2]}/${parts[1]}/${parts[0]}`:String(date);
   }
-  return [formattedDate,time].filter(Boolean).join(' — ')||'—';
+  return escapeHTML([formattedDate,time].filter(Boolean).join(' — ')||'—');
 }
 
 // ── Save record ───────────────────────────────────────────────
@@ -2214,7 +2223,7 @@ function resetForm() {
 // ── Status badge helper ────────────────────────────────────────
 function statusBadge(s) {
   const m = {'استلام':'b-teal','تسليم':'b-green','غير متاح':'b-red','تم الاستلام':'b-green','تم التسليم':'b-amber','قيد الاستخدام':'b-green','مُعاد':'b-gray'};
-  return `<span class="badge ${m[s]||'b-gray'}">${s}</span>`;
+  return `<span class="badge ${m[s]||'b-gray'}">${escapeHTML(s)}</span>`;
 }
 
 // ── Render log ─────────────────────────────────────────────────
@@ -2240,16 +2249,16 @@ function renderLog() {
   }
   tbody.innerHTML = filtered.map((r,idx)=>{
     const realIdx = RECORDS.indexOf(r);
-    const devTags = r.devices.map(d=>`<span class="dev-tag">${d.id}</span>`).join('');
+    const devTags = r.devices.map(d=>`<span class="dev-tag">${escapeHTML(d.id)}</span>`).join('');
     return `<tr>
-      <td class="rec-num">${r.id}</td>
-      <td>${r.date}</td>
+      <td class="rec-num">${escapeHTML(r.id)}</td>
+      <td>${escapeHTML(r.date)}</td>
       <td style="font-weight:500">${escapeHTML(getRecordDeliveredBy(r)||'—')}</td>
-      <td style="font-weight:500">${r.engineer}</td>
+      <td style="font-weight:500">${escapeHTML(r.engineer)}</td>
       <td><div class="devices-cell">${devTags}</div></td>
       <td>${formatMovementDateTime(r.rdate,r.rtime)}</td>
       <td>${formatMovementDateTime(r.ddate,r.dtime)}</td>
-      <td>${r.location}</td>
+      <td>${escapeHTML(r.location)}</td>
       <td>${statusBadge(r.status)}</td>
       <td class="no-print">
         <div style="display:flex;gap:6px;white-space:nowrap">
@@ -2296,7 +2305,7 @@ function openEdit(idx) {
   fillEditEng();
   // show devices as tags
   document.getElementById('e-devices-list').innerHTML =
-    r.devices.map(d=>`<span class="dev-tag" style="font-size:12px;padding:4px 10px">${d.id} — ${d.name}</span>`).join('');
+    r.devices.map(d=>`<span class="dev-tag" style="font-size:12px;padding:4px 10px">${escapeHTML(d.id)} — ${escapeHTML(d.name)}</span>`).join('');
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -2361,11 +2370,11 @@ function buildPrintHTML(r) {
   const deliveredBy = getRecordDeliveredBy(r)||'—';
   const devRows = r.devices.map(d=>`
     <tr>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.id}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.name}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.type}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.serial}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #eee">${d.specs}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee">${escapeHTML(d.id)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee">${escapeHTML(d.name)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee">${escapeHTML(d.type)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee">${escapeHTML(d.serial)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #eee">${escapeHTML(d.specs)}</td>
     </tr>
   `).join('');
 
@@ -2381,8 +2390,8 @@ function buildPrintHTML(r) {
       </div>
       <div style="text-align:left">
         <div style="font-size:11px;color:#888">رقم السجل</div>
-        <div style="font-size:22px;font-weight:700;color:#1A1A2E">${r.id}</div>
-        <div style="font-size:11px;color:#888">${r.date}</div>
+        <div style="font-size:22px;font-weight:700;color:#1A1A2E">${escapeHTML(r.id)}</div>
+        <div style="font-size:11px;color:#888">${escapeHTML(r.date)}</div>
       </div>
     </div>
 
@@ -2395,9 +2404,9 @@ function buildPrintHTML(r) {
       <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #ddd;border-radius:6px;overflow:hidden">
         <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">اسم المُسلِّم</div><div style="font-size:14px;font-weight:600">${escapeHTML(deliveredBy)}</div></div>
         <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">اسم المستلم</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.engineer)}</div></div>
-        <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">الرقم الوظيفي للمستلم</div><div style="font-size:14px;font-weight:600">${r.empid||'—'}</div></div>
-        <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">موقع العمل</div><div style="font-size:14px;font-weight:600">${r.location}</div></div>
-        <div style="padding:9px 12px"><div style="font-size:10px;color:#999">الحالة</div><div style="font-size:14px;font-weight:600">${r.status}</div></div>
+        <div style="padding:9px 12px;border-left:1px solid #ddd;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">الرقم الوظيفي للمستلم</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.empid||'—')}</div></div>
+        <div style="padding:9px 12px;border-bottom:1px solid #ddd"><div style="font-size:10px;color:#999">موقع العمل</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.location)}</div></div>
+        <div style="padding:9px 12px"><div style="font-size:10px;color:#999">الحالة</div><div style="font-size:14px;font-weight:600">${escapeHTML(r.status)}</div></div>
       </div>
     </div>
 
@@ -2423,7 +2432,7 @@ function buildPrintHTML(r) {
       </table>
     </div>
 
-    ${r.notes ? `<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">ملاحظات</div><div style="border:1px solid #ddd;border-radius:6px;padding:10px 12px;font-size:13px;min-height:40px">${r.notes}</div></div>` : ''}
+    ${r.notes ? `<div style="margin-bottom:16px"><div style="font-size:10px;font-weight:700;color:#999;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:8px">ملاحظات</div><div style="border:1px solid #ddd;border-radius:6px;padding:10px 12px;font-size:13px;min-height:40px">${escapeHTML(r.notes)}</div></div>` : ''}
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:28px">
       <div style="text-align:center">
@@ -2438,7 +2447,7 @@ function buildPrintHTML(r) {
       </div>
     </div>
     <div style="margin-top:20px;padding-top:10px;border-top:1px solid #eee;text-align:center;font-size:10px;color:#bbb">
-      تم الإنشاء بتاريخ ${r.date} — نظام متابعة الأجهزة
+      تم الإنشاء بتاريخ ${escapeHTML(r.date)} — نظام متابعة الأجهزة
     </div>
   </div>`;
 }
@@ -2488,13 +2497,13 @@ function doPrint() {
 function renderInventory() {
   const statColors = {متاح:'b-green','غير متاح':'b-red',محجوز:'b-amber','تحت الصيانة':'b-amber','خارج الخدمة':'b-gray',مباع:'b-gray','تم التحويل':'b-gray'};
   document.getElementById('inv-tbody').innerHTML = INVENTORY.map(d=>`<tr>
-    <td style="font-weight:700;color:var(--dark)">${d.id}</td>
-    <td>${d.name}</td>
-    <td>${d.type}</td>
-    <td style="color:var(--muted);font-size:12px">${d.serial}</td>
-    <td><span class="badge ${statColors[d.status]||'b-gray'}">${d.status}</span></td>
-    <td style="font-weight:500">${d.holder}</td>
-    <td>${d.location}</td>
+    <td style="font-weight:700;color:var(--dark)">${escapeHTML(d.id)}</td>
+    <td>${escapeHTML(d.name)}</td>
+    <td>${escapeHTML(d.type)}</td>
+    <td style="color:var(--muted);font-size:12px">${escapeHTML(d.serial)}</td>
+    <td><span class="badge ${statColors[d.status]||'b-gray'}">${escapeHTML(d.status)}</span></td>
+    <td style="font-weight:500">${escapeHTML(d.holder)}</td>
+    <td>${escapeHTML(d.location)}</td>
     <td>${calibrationBadge(d)}</td>
   </tr>`).join('');
 }
@@ -2622,11 +2631,11 @@ function renderEngTable() {
   const tbody = document.getElementById('eng-tbody');
   if(!tbody) return;
   tbody.innerHTML = ENGINEERS.map((e,i) => `<tr>
-    <td style="font-weight:600">${e.name}</td>
-    <td>${e.empid||'—'}</td>
-    <td>${e.nat||'—'}</td>
-    <td style="font-size:12px;color:var(--muted)">${e.iqama||'—'}</td>
-    <td>${e.phone||'—'}</td>
+    <td style="font-weight:600">${escapeHTML(e.name)}</td>
+    <td>${escapeHTML(e.empid||'—')}</td>
+    <td>${escapeHTML(e.nat||'—')}</td>
+    <td style="font-size:12px;color:var(--muted)">${escapeHTML(e.iqama||'—')}</td>
+    <td>${escapeHTML(e.phone||'—')}</td>
     <td class="no-print">
       <div style="display:flex;gap:6px;white-space:nowrap">
         <button class="btn-edit" onclick="openEngModal(${i})">✏️ تعديل</button>
@@ -2721,7 +2730,7 @@ function refreshLocationSelects() {
     const sel = document.getElementById(id);
     if(!sel) return;
     const current = sel.value;
-    sel.innerHTML = LOCATIONS.map(l=>`<option value="${l}">${l}</option>`).join('');
+    sel.innerHTML = LOCATIONS.map(l=>`<option value="${escapeHTML(l)}">${escapeHTML(l)}</option>`).join('');
     if(current && LOCATIONS.includes(current)) sel.value = current;
   });
 }
@@ -2731,7 +2740,7 @@ function renderLocations() {
   if(!container) return;
   container.innerHTML = LOCATIONS.map((l,i) => `
     <div style="display:flex;align-items:center;gap:6px;background:var(--light);border:1.5px solid var(--border);border-radius:8px;padding:8px 14px">
-      <span style="font-weight:600;font-size:13px">${l}</span>
+      <span style="font-weight:600;font-size:13px">${escapeHTML(l)}</span>
       ${DEFAULT_LOCATIONS.includes(l)
         ? '<span style="font-size:10px;color:var(--muted)">(افتراضي)</span>'
         : `<button onclick="deleteLocation(${i})" style="background:none;border:none;cursor:pointer;color:var(--red-t);font-size:16px;padding:0 2px" title="حذف">✕</button>`}
@@ -2817,9 +2826,20 @@ async function initializeAuth(){
   authSubscription=data.subscription;
 }
 
+// Copies of company data kept in this browser; removed on sign-out so they do not stay on a shared computer.
+function clearLocalData(){
+  [LS_RECORDS,LS_INVENTORY,LS_ENGINEERS,LS_LOCATIONS,LS_PENDING_DEVICES].forEach(key=>{try{localStorage.removeItem(key)}catch(e){}});
+  RECORDS=[];INVENTORY=[];ENGINEERS=[{...DEFAULT_ENGINEERS[0]}];LOCATIONS=[...DEFAULT_LOCATIONS];
+}
+function renderAfterClear(){
+  try{refreshEngDropdowns();refreshLocationSelects();renderEngTable();renderLocations();updateRecId();renderInventory();renderDevicesMgmt();renderLog();renderDashboard();renderCalibration();}catch(e){console.warn(e)}
+}
 async function logout() {
+  const pending=getPendingDeviceIds().length;
+  if(pending&&!localizedConfirm(`يوجد ${pending} جهاز لم يُحفظ في Supabase بعد وسيُحذف من هذا المتصفح عند الخروج. هل تريد الخروج؟`))return;
   const client=getSupabaseClient();
   if(client)await client.auth.signOut();
+  clearLocalData();renderAfterClear();
   CURRENT_ROLE='viewer';applyRolePermissions();
   document.getElementById('l-pass').value='';
   setLoginVisible(true,'تم تسجيل الخروج');
@@ -2846,7 +2866,7 @@ function renderTypeSelect(selectedValue) {
   const sel = document.getElementById('dm-type');
   if(!sel) return;
   sel.innerHTML = DEVICE_TYPES.map(t =>
-    `<option value="${t}" ${t===selectedValue?'selected':''}>${t}</option>`
+    `<option value="${escapeHTML(t)}" ${t===selectedValue?'selected':''}>${escapeHTML(t)}</option>`
   ).join('') + '<option value="__manage__">⚙️ إدارة الأنواع...</option>';
 }
 
@@ -2908,12 +2928,14 @@ function renderEngList(q) {
     return;
   }
   list.innerHTML = filtered.map(e =>
-    `<div class="srch-item" onmousedown="selectEng('${e.name.replace(/'/g,"\\'")}')">
-      <span style="font-weight:600">${e.name}</span>
-      <span style="font-size:11px;color:#999;margin-right:8px">${e.empid}</span>
+    `<div class="srch-item" onmousedown="selectEngAt(${ENGINEERS.indexOf(e)})">
+      <span style="font-weight:600">${escapeHTML(e.name)}</span>
+      <span style="font-size:11px;color:#999;margin-right:8px">${escapeHTML(e.empid)}</span>
     </div>`
   ).join('');
 }
+function selectEngAt(i){const e=ENGINEERS[i];if(e)selectEng(e.name)}
+function selectDevAt(n,i){const d=INVENTORY[i];if(d)selectDev(n,d.id)}
 function selectEng(name) {
   document.getElementById('eng-srch-inp').value = name;
   document.getElementById('f-eng').value = name;
@@ -2947,10 +2969,10 @@ function renderDevList(n, q) {
     return;
   }
   list.innerHTML = filtered.map(d =>
-    `<div class="srch-item ${d.status!=='متاح'?'unavail':''}" onmousedown="selectDev(${n},'${d.id.replace(/'/g,"\\'")}')">
-      <span style="font-weight:600">${d.id}</span>
-      <span style="margin-right:6px;color:#555">${d.name}</span>
-      <span style="font-size:11px;color:${d.status==='متاح'?'#155724':'#999'}">${d.status}</span>
+    `<div class="srch-item ${d.status!=='متاح'?'unavail':''}" onmousedown="selectDevAt(${n},${INVENTORY.indexOf(d)})">
+      <span style="font-weight:600">${escapeHTML(d.id)}</span>
+      <span style="margin-right:6px;color:#555">${escapeHTML(d.name)}</span>
+      <span style="font-size:11px;color:${d.status==='متاح'?'#155724':'#999'}">${escapeHTML(d.status)}</span>
     </div>`
   ).join('');
 }
@@ -2983,13 +3005,13 @@ function renderDevicesMgmt() {
   tbody.innerHTML = devices.map(d => {
     const idx = INVENTORY.indexOf(d);
     return `<tr>
-    <td style="font-weight:700;color:var(--dark)">${d.id}</td>
-    <td>${d.name}</td>
-    <td>${d.type}</td>
-    <td style="color:var(--muted);font-size:12px">${d.serial}</td>
-    <td>${d.location}</td>
-    <td>${d.holder||'—'}</td>
-    <td><span class="badge ${statColors[d.status]||'b-gray'}">${d.status}</span></td>
+    <td style="font-weight:700;color:var(--dark)">${escapeHTML(d.id)}</td>
+    <td>${escapeHTML(d.name)}</td>
+    <td>${escapeHTML(d.type)}</td>
+    <td style="color:var(--muted);font-size:12px">${escapeHTML(d.serial)}</td>
+    <td>${escapeHTML(d.location)}</td>
+    <td>${escapeHTML(d.holder||'—')}</td>
+    <td><span class="badge ${statColors[d.status]||'b-gray'}">${escapeHTML(d.status)}</span></td>
     <td>${calibrationBadge(d)}</td>
     <td class="no-print">
       <div style="display:flex;gap:6px;white-space:nowrap">
@@ -3023,7 +3045,7 @@ function openDeviceModal(idx) {
     document.getElementById('dm-cert-url').value = d.certificateUrl||'';
     document.getElementById('dm-cert-file').value = '';
     document.getElementById('dm-cert-current').innerHTML = d.certificatePath||d.certificateUrl
-      ? `✓ شهادة محفوظة — <button type="button" class="cert-link" style="border:none;background:none;cursor:pointer;font-family:inherit" onclick="openCertificate('${encodeURIComponent(d.id)}')">عرض</button>`
+      ? `✓ شهادة محفوظة — <button type="button" class="cert-link" style="border:none;background:none;cursor:pointer;font-family:inherit" onclick="openCertificate('${encodeURIComponent(d.id).replace(/'/g,'%27')}')">عرض</button>`
       : 'لا توجد شهادة محفوظة';
     document.getElementById('dm-notes').value = d.notes||'';
   } else {

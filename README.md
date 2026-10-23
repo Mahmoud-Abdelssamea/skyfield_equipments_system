@@ -78,3 +78,14 @@ update public.sf_profiles set role = 'storekeeper' where id = 'USER_UUID';
 - لا تضع `service_role key` داخل HTML مطلقًا.
 - جميع الجداول والملفات محمية بسياسات Row Level Security.
 - شهادات المعايرة محفوظة في bucket خاص، ويتم فتحها بروابط مؤقتة مدتها دقيقتان.
+
+## تحديث الأمان — 23 أكتوبر 2026
+
+- الحسابات الجديدة تُنشأ **غير مفعّلة**، ولا ترى أي بيانات حتى يفعّلها المدير:
+  `update public.sf_profiles set active = true where id = 'USER_UUID';`
+- قراءة الأجهزة والحركات والمستلمين والمواقع والشهادات للحسابات النشطة فقط.
+- جدول `equipment` القديم محفوظ ببياناته، والتعديل فيه للمدير وأمين المخزن فقط. حُذف جدول `sf_kv_store` غير المستخدم.
+- مكتبتا Supabase (2.117.2) وExcel (0.20.3) محفوظتان داخل المستودع بإصدار ثابت.
+- زر إعداد اتصال Supabase للمدير فقط، وتسجيل الخروج يمسح البيانات المحفوظة في المتصفح.
+- ملف قاعدة البيانات: `supabase/2026-10-23-security.sql`.
+- مُستحسن من لوحة Supabase: إيقاف **Allow new users to sign up** وتشغيل **Leaked password protection**.
