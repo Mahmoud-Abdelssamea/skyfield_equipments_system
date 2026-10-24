@@ -110,6 +110,8 @@ select{cursor:pointer}
 .b-teal{background:var(--teal);color:var(--teal-t)}
 .b-orange{background:#FDE8D7;color:#9a4a07}
 .cell-sub{font-size:11.5px;font-weight:400;color:var(--muted);margin-top:3px}
+.doc-list-actions{margin-inline-start:auto;display:inline-flex;gap:6px}
+.doc-list-actions button{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:14px;padding:3px 10px;font:inherit;font-size:11px;cursor:pointer;white-space:nowrap}
 .eng-actions{display:flex;flex-wrap:wrap;gap:6px;min-width:250px}
 .eng-actions button{white-space:nowrap}
 #eng-table th:first-child,#eng-table td:first-child{min-width:150px}
@@ -407,7 +409,7 @@ html{scroll-behavior:smooth}
     <div class="kpi-card" style="--kpi:#E94560"><div class="kpi-label">في المواقع</div><div class="kpi-value" id="kpi-assigned">0</div><div class="kpi-hint">بعهدة مهندس أو مشروع</div></div>
     <div class="kpi-card" style="--kpi:#E8610A"><div class="kpi-label">مؤجرة</div><div class="kpi-value" id="kpi-rented">0</div><div class="kpi-hint">عند عملاء</div></div>
     <div class="kpi-card" style="--kpi:#6f42c1"><div class="kpi-label">في الصيانة</div><div class="kpi-value" id="kpi-maintenance">0</div><div class="kpi-hint">صيانة أو معايرة خارجية</div></div>
-    <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">وثائق قريبة الانتهاء</div><div class="kpi-value" id="kpi-documents">0</div><div class="kpi-hint">إقامة أو SEC-ID خلال 60 يومًا</div></div>
+    <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">وثائق قريبة الانتهاء</div><div class="kpi-value" id="kpi-documents">0</div><div class="kpi-hint">إقامة أو SEC-ID خلال 45 يومًا</div></div>
     <div class="kpi-card" style="--kpi:#856404"><div class="kpi-label">معايرة قريبة</div><div class="kpi-value" id="kpi-due">0</div><div class="kpi-hint">خلال 60 يومًا</div></div>
     <div class="kpi-card" style="--kpi:#b02a37"><div class="kpi-label">معايرة منتهية</div><div class="kpi-value" id="kpi-expired">0</div><div class="kpi-hint">تحتاج إجراء فوري</div></div>
   </div>
@@ -422,8 +424,14 @@ html{scroll-behavior:smooth}
       <div class="card-body"><div class="alert-list" id="dashboard-outside"></div></div>
     </div>
     <div class="card">
-      <div class="card-header">🪪 الإقامة وبطاقة SEC-ID <span class="section-subtitle">الأقرب انتهاءً أولًا</span></div>
-      <div class="card-body"><div class="alert-list" id="dashboard-documents"></div></div>
+      <div class="card-header">🪪 الإقامات <span class="section-subtitle">تنتهي خلال 45 يومًا</span>
+        <span class="doc-list-actions no-print"><button type="button" onclick="printDocumentList('iqama')">🖨 طباعة</button><button type="button" onclick="exportDocumentList('iqama')">📥 Excel</button></span></div>
+      <div class="card-body"><div class="alert-list" id="dashboard-iqamas"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">🦺 بطاقات SEC-ID <span class="section-subtitle">تنتهي خلال 45 يومًا</span>
+        <span class="doc-list-actions no-print"><button type="button" onclick="printDocumentList('sec_id')">🖨 طباعة</button><button type="button" onclick="exportDocumentList('sec_id')">📥 Excel</button></span></div>
+      <div class="card-body"><div class="alert-list" id="dashboard-secids"></div></div>
     </div>
     <div class="card">
       <div class="card-header">⚡ إجراءات سريعة</div>
@@ -1319,6 +1327,20 @@ const AR_TO_EN=Object.freeze({
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
   "نسيت كلمة المرور؟":"Forgot password?",
+  "🪪 الإقامات":"🪪 Iqamas",
+  "الإقامات":"Iqamas",
+  "🦺 بطاقات SEC-ID":"🦺 SEC-ID cards",
+  "بطاقات SEC-ID":"SEC-ID cards",
+  "تنتهي خلال 45 يومًا":"Expiring within 45 days",
+  "إقامة أو SEC-ID خلال 45 يومًا":"Iqama or SEC-ID within 45 days",
+  "لا توجد إقامة تنتهي خلال 45 يومًا":"No Iqama expires within 45 days",
+  "لا توجد بطاقة SEC-ID تنتهي خلال 45 يومًا":"No SEC-ID card expires within 45 days",
+  "الإقامات التي تنتهي خلال 45 يومًا":"Iqamas expiring within 45 days",
+  "بطاقات SEC-ID التي تنتهي خلال 45 يومًا":"SEC-ID cards expiring within 45 days",
+  "رقم البطاقة":"Card number",
+  "المتبقي":"Remaining",
+  "لا توجد بيانات للطباعة":"Nothing to print",
+  "🖨 طباعة":"🖨 Print",
   "الاسم بالإنجليزية":"Name in English",
   "اسم المستلم لدى العميل بالإنجليزية":"Client receiving person — name in English",
   "الوظيفة":"Job title",
@@ -2138,12 +2160,15 @@ function documentBadge(expiry, returnedOn) {
   return `<span class="badge ${state.badge}" title="${escapeHTML(expiry ? formatStoredDate(expiry) : '')}">${escapeHTML(translateRuntimeText(documentText(state, expiry, returnedOn)))}</span>`;
 }
 // Every Iqama / SEC-ID that is expired or due within 60 days, soonest first.
-function documentAlerts() {
+// Dashboard lists and their print / Excel: everything expired or expiring within this many days.
+const DOC_ALERT_DAYS = 45;
+function documentAlerts(onlyDoc) {
   const alerts = [];
-  ENGINEERS.filter(e => e.name !== WAREHOUSE_HOLDER).forEach((e, index) => {
-    [['iqama', 'الإقامة', e.iqamaExpiry, ''], ['sec_id', 'SEC-ID', e.secIdExpiry, e.secIdReturnedOn]].forEach(([doc, label, expiry, returned]) => {
+  ENGINEERS.filter(e => e.name !== WAREHOUSE_HOLDER).forEach(e => {
+    [['iqama', 'الإقامة', e.iqamaExpiry, '', e.iqama], ['sec_id', 'SEC-ID', e.secIdExpiry, e.secIdReturnedOn, e.secIdNo]].forEach(([doc, label, expiry, returned, number]) => {
+      if(onlyDoc && doc !== onlyDoc) return;
       const state = documentState(expiry, returned);
-      if(['expired','critical','urgent','soon'].includes(state.key)) alerts.push({engineer:e, index:ENGINEERS.indexOf(e), doc, label, expiry, state});
+      if(state.days !== null && state.key !== 'returned' && state.days <= DOC_ALERT_DAYS) alerts.push({engineer:e, index:ENGINEERS.indexOf(e), doc, label, expiry, number, state});
     });
   });
   return alerts.sort((a,b) => a.state.days - b.state.days);
@@ -2228,7 +2253,7 @@ function renderDashboard() {
   const docAlerts = documentAlerts();
   const values = {total,available,assigned,rented,maintenance,documents:docAlerts.length,due,expired};
   renderOutsideDevices();
-  renderDocumentAlerts(docAlerts);
+  renderDocumentAlerts();
   Object.entries(values).forEach(([key,value])=>{ const el=document.getElementById('kpi-'+key); if(el) el.textContent=value; });
 
   const dateEl = document.getElementById('dashboard-date');
@@ -2286,14 +2311,54 @@ function renderOutsideDevices() {
   }).join('');
 }
 
-function renderDocumentAlerts(alerts) {
-  const el = document.getElementById('dashboard-documents');
-  if(!el) return;
-  if(!alerts.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div>${escapeHTML(translateRuntimeText('لا توجد إقامة أو بطاقة SEC-ID قريبة الانتهاء'))}</div></div>`; return; }
-  el.innerHTML = alerts.slice(0,8).map(({engineer,label,expiry,state}) => `<div class="alert-row" style="--alert:${state.color}">
-      <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(engineer.name)} — ${escapeHTML(translateRuntimeText(label))}</div>
-      <div class="alert-sub">${escapeHTML([engineer.job && translateRuntimeText(engineer.job), formatStoredDate(expiry), engineer.phone].filter(Boolean).join(' · '))}</div></div>
-      <span class="alert-days">${escapeHTML(translateRuntimeText(calibrationDaysText(state.days)))}</span></div>`).join('');
+// Two separate dashboard lists: Iqamas and SEC-ID cards.
+function renderDocumentAlerts() {
+  [['iqama','dashboard-iqamas','لا توجد إقامة تنتهي خلال 45 يومًا'],['sec_id','dashboard-secids','لا توجد بطاقة SEC-ID تنتهي خلال 45 يومًا']].forEach(([doc,id,empty]) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    const alerts = documentAlerts(doc);
+    if(!alerts.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div>${escapeHTML(translateRuntimeText(empty))}</div></div>`; return; }
+    el.innerHTML = alerts.map(({engineer,expiry,number,state}) => `<div class="alert-row" style="--alert:${state.color}">
+        <span class="alert-dot"></span><div><div class="alert-title">${escapeHTML(engineer.name)}</div>
+        <div class="alert-sub"><span dir="ltr">${escapeHTML(number||'—')}</span> · ${escapeHTML([formatStoredDate(expiry), engineer.phone].filter(Boolean).join(' · '))}</div></div>
+        <span class="alert-days">${escapeHTML(translateRuntimeText(calibrationDaysText(state.days)))}</span></div>`).join('');
+  });
+}
+
+// Rows for print and Excel, in the page language.
+function documentListRows(doc) {
+  return documentAlerts(doc).map(({engineer,expiry,number,state}) => [
+    translateRuntimeText(engineer.name), engineer.nameEn || '', engineer.phone || '', number || '', formatStoredDate(expiry), translateRuntimeText(calibrationDaysText(state.days))]);
+}
+function documentListTitle(doc) {
+  return translateRuntimeText(doc === 'iqama' ? 'الإقامات التي تنتهي خلال 45 يومًا' : 'بطاقات SEC-ID التي تنتهي خلال 45 يومًا');
+}
+function documentListHeaders(doc) {
+  return ['الاسم','الاسم بالإنجليزية','رقم الجوال', doc === 'iqama' ? 'رقم الإقامة' : 'رقم البطاقة','تاريخ الانتهاء','المتبقي'].map(translateRuntimeText);
+}
+function exportDocumentList(doc) {
+  const rows = documentListRows(doc);
+  if(!rows.length){toast('لا توجد بيانات للتصدير');return;}
+  const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([documentListHeaders(doc), ...rows]);
+  ws['!cols'] = [{wch:30},{wch:32},{wch:14},{wch:16},{wch:14},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, doc === 'iqama' ? 'Iqama' : 'SEC-ID');
+  XLSX.writeFile(wb, (doc === 'iqama' ? 'Iqamas_' : 'SEC-ID_') + localISODate() + '.xlsx');
+  toast('✅ تم تصدير ملف Excel');
+}
+function printDocumentList(doc) {
+  const rows = documentListRows(doc);
+  if(!rows.length){toast('لا توجد بيانات للطباعة');return;}
+  const en = CURRENT_LANG === 'en', title = documentListTitle(doc);
+  const cell = (v, tag='td') => `<${tag} style="border:1px solid #ccc;padding:7px 9px;text-align:${en?'left':'right'}">${escapeHTML(v)}</${tag}>`;
+  const w = window.open('', '_blank', 'width=900,height=900');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title>
+    <style>body{margin:1.2cm;font-family:'Segoe UI',Tahoma,Arial,sans-serif;direction:${en?'ltr':'rtl'}}@media print{@page{margin:1.2cm;size:A4}}</style></head><body>
+    <h2 style="color:#1F3864;margin:0 0 4px">${escapeHTML(title)}</h2>
+    <div style="color:#666;font-size:12px;margin-bottom:14px">Sky Field — ${escapeHTML(formatStoredDate(localISODate()))}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#1F3864;color:#fff">${documentListHeaders(doc).map(h=>cell(h,'th')).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${r.map(v=>cell(v)).join('')}</tr>`).join('')}</tbody></table>
+    <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script></body></html>`);
+  w.document.close();
 }
 
 function renderCalibration() {
