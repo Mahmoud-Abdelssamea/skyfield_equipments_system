@@ -470,9 +470,17 @@ html{scroll-behavior:smooth}
           <input id="f-party" list="party-options" autocomplete="off">
           <datalist id="party-options"></datalist>
         </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="f-party-en">الاسم بالإنجليزية</label>
+          <input id="f-party-en" dir="ltr" autocomplete="off">
+        </div>
         <div class="field" data-kind="rental" hidden>
           <label for="f-contact">اسم المستلم لدى العميل</label>
           <input id="f-contact" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="f-contact-en">اسم المستلم لدى العميل بالإنجليزية</label>
+          <input id="f-contact-en" dir="ltr" autocomplete="off">
         </div>
         <div class="field" data-kind="rental" hidden>
           <label for="f-idno">رقم الإقامة / الهوية <span class="req">*</span></label>
@@ -879,6 +887,10 @@ html{scroll-behavior:smooth}
           <label for="em-name">الاسم الكامل <span class="req">*</span></label>
           <input id="em-name" placeholder="الاسم الكامل">
         </div>
+        <div class="field full">
+          <label for="em-name-en">الاسم بالإنجليزية</label>
+          <input id="em-name-en" dir="ltr" placeholder="Full name as in the Iqama" autocomplete="off">
+        </div>
         <div class="field">
           <label for="em-empid">الرقم الوظيفي</label>
           <input id="em-empid" placeholder="مثال: 260311">
@@ -943,9 +955,17 @@ html{scroll-behavior:smooth}
           <label for="e-party" id="e-party-label">اسم العميل (الشركة)</label>
           <input id="e-party" autocomplete="off">
         </div>
+        <div class="field" data-kind="rental maintenance" hidden>
+          <label for="e-party-en">الاسم بالإنجليزية</label>
+          <input id="e-party-en" dir="ltr" autocomplete="off">
+        </div>
         <div class="field" data-kind="rental" hidden>
           <label for="e-contact">اسم المستلم لدى العميل</label>
           <input id="e-contact" autocomplete="off">
+        </div>
+        <div class="field" data-kind="rental" hidden>
+          <label for="e-contact-en">اسم المستلم لدى العميل بالإنجليزية</label>
+          <input id="e-contact-en" dir="ltr" autocomplete="off">
         </div>
         <div class="field" data-kind="rental" hidden>
           <label for="e-idno">رقم الإقامة / الهوية</label>
@@ -1297,6 +1317,8 @@ const AR_TO_EN=Object.freeze({
   "بيانات الدخول غير صحيحة":"Incorrect sign-in details",
   "تم تسجيل الدخول":"Signed in successfully",
   "نسيت كلمة المرور؟":"Forgot password?",
+  "الاسم بالإنجليزية":"Name in English",
+  "اسم المستلم لدى العميل بالإنجليزية":"Client receiving person — name in English",
   "الوظيفة":"Job title",
   "فني":"Technician",
   "تاريخ انتهاء الإقامة":"Iqama expiry date",
@@ -1470,10 +1492,22 @@ let I18N_RUNNING=false;
 
 function uiLocale(){return CURRENT_LANG==='en'?'en-GB':'ar-SA';}
 
+// English name of a recipient, or of a rental client / receiving person, when one was entered; '' otherwise.
+function englishNameOf(name){
+  if(!name)return '';
+  const person=typeof ENGINEERS!=='undefined'&&Array.isArray(ENGINEERS)?ENGINEERS.find(e=>e.name===name&&e.nameEn):null;
+  if(person)return person.nameEn;
+  const records=typeof RECORDS!=='undefined'&&Array.isArray(RECORDS)?RECORDS:[];
+  for(const r of records){if(r.partyEn&&r.engineer===name)return r.partyEn;if(r.contactEn&&r.contact===name)return r.contactEn;}
+  return '';
+}
+
 function translateRuntimeText(value){
   const source=String(value??'');
   if(CURRENT_LANG!=='en')return source;
   if(AR_TO_EN[source])return AR_TO_EN[source];
+  const englishName=englishNameOf(source.trim());
+  if(englishName)return englishName;
   const icon=source.match(/^([✅⚠️⏳🗑📥📤📄💾🔒⚙️➕✏️🖨🔄🧪📦📊📍👷🔧📝⚡🔍❌✓]+\uFE0F?\s*)/u);
   const prefix=icon?.[1]||'';
   const text=prefix?source.slice(prefix.length):source;
@@ -1700,6 +1734,7 @@ function dbRecordToLocal(row) {
     notes:row.notes||'',devices:Array.isArray(row.devices)?row.devices:[],
     kind:row.destination_type||'engineer',ref:row.reference_no||'',expectedReturn:row.expected_return||'',
     escort:row.escort||'',contact:row.contact_name||'',idNumber:row.id_number||'',
+    partyEn:row.party_name_en||'',contactEn:row.contact_name_en||'',
     updatedAt:row.updated_at||'',createdAt:row.created_at||''
   };
 }
@@ -1717,7 +1752,7 @@ function localRecordToDb(record) {
 }
 
 function dbEngineerToLocal(row) {
-  return {dbId:row.id,name:row.name,empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||'',
+  return {dbId:row.id,name:row.name,nameEn:row.name_en||'',empid:row.empid||'',nat:row.nationality||'',iqama:row.iqama||'',phone:row.phone||'',
     job:row.job_title||'',iqamaExpiry:row.iqama_expiry||'',secIdNo:row.sec_id_no||'',secIdExpiry:row.sec_id_expiry||'',secIdReturnedOn:row.sec_id_returned_on||''};
 }
 
@@ -1805,7 +1840,14 @@ function refreshAfterSave(){saveToStorage();updateRecId();renderInventory();rend
 async function sendPendingMovement(item){
   const res=await callRpc('sf_record_movement',{p_client_id:item.clientId,p_movement:item.payload});
   if(res.error)return res;
-  applyServerDevices(res.data.devices);upsertLocalRecord(res.data.movement);return res;
+  applyServerDevices(res.data.devices);upsertLocalRecord(res.data.movement);
+  // English names of a rental client / provider are kept right after the movement is saved.
+  const {party_name_en:partyEn,contact_name_en:contactEn}=item.payload;
+  if((partyEn||contactEn)&&res.data.movement.destination_type!=='engineer'){
+    const named=await callRpc('sf_set_movement_english_names',{p_record_no:res.data.movement.record_no,p_party_name_en:partyEn||'',p_contact_name_en:contactEn||''});
+    if(!named.error)upsertLocalRecord(named.data);
+  }
+  return res;
 }
 async function retryPendingMovements(silent=true){
   const list=getPendingMovements();if(!list.length)return true;
@@ -2683,6 +2725,7 @@ async function saveRecord() {
     engineer:eng,destination_type:kind,empid:out?'':document.getElementById('f-empid').value,nationality:out?'':document.getElementById('f-nat').value,
     phone:out?val('f-party-phone'):document.getElementById('f-phone').value,location:document.getElementById('f-loc').value,movement_type:movementStatus,
     contact_name:out?val('f-contact'):'',id_number:out?val('f-idno'):'',reference_no:out?val('f-ref'):'',
+    party_name_en:out?val('f-party-en'):'',contact_name_en:out?val('f-contact-en'):'',
     expected_return:out?val('f-expected'):'',escort:out?document.getElementById('f-escort').value:'',
     received_date:document.getElementById('f-rdate').value,received_time:document.getElementById('f-rtime').value,
     delivered_date:document.getElementById('f-ddate').value,delivered_time:document.getElementById('f-dtime').value,
@@ -2718,7 +2761,7 @@ function resetForm() {
   document.getElementById('f-iqama').value='';
   document.getElementById('f-nat').value='';
   document.getElementById('f-phone').value='';
-  ['f-party','f-contact','f-idno','f-party-phone','f-ref','f-expected','f-escort'].forEach(id=>{document.getElementById(id).value='';});
+  ['f-party','f-party-en','f-contact','f-contact-en','f-idno','f-party-phone','f-ref','f-expected','f-escort'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('f-kind').value='engineer';
   showKindFields(document.getElementById('page-form'),'engineer');
   document.getElementById('f-notes').value='';
@@ -2848,6 +2891,8 @@ function openEdit(idx) {
     document.getElementById('e-party-label').textContent = translateRuntimeText(kind === 'rental' ? 'اسم العميل (الشركة)' : 'جهة الصيانة أو المعايرة');
     document.getElementById('e-party').value = r.engineer;
     document.getElementById('e-contact').value = r.contact||'';
+    document.getElementById('e-party-en').value = r.partyEn||'';
+    document.getElementById('e-contact-en').value = r.contactEn||'';
     document.getElementById('e-idno').value = r.idNumber||'';
     document.getElementById('e-party-phone').value = r.phone||'';
     document.getElementById('e-ref').value = r.ref||'';
@@ -2882,6 +2927,10 @@ async function saveEdit() {
   const res=await callRpc('sf_update_movement',{p_record_no:r.id,p_changes:changes,p_expected_updated_at:r.updatedAt||null});
   if(res.error){toast('⚠️ '+(res.transient?'تعذر الاتصال بـ Supabase؛ لم تُحفظ التعديلات':rpcErrorMessage(res.error)));if(!res.transient&&!/MOVEMENT_NOT_LATEST/.test(String(res.error?.message))){closeEdit();await syncFromCloud();}return;}
   applyServerDevices(res.data.devices);upsertLocalRecord(res.data.movement);
+  if((r.kind||'engineer') !== 'engineer') {
+    const named=await callRpc('sf_set_movement_english_names',{p_record_no:r.id,p_party_name_en:document.getElementById('e-party-en').value.trim(),p_contact_name_en:document.getElementById('e-contact-en').value.trim()});
+    if(!named.error)upsertLocalRecord(named.data);
+  }
   closeEdit();
   toast('✅ تم حفظ التعديلات على '+r.id);
   refreshAfterSave();
@@ -2923,7 +2972,7 @@ function printLang() { return PRINT_LANG || (CURRENT_LANG === 'en' ? 'en' : 'ar'
 function printWords(lang) {
   const t = s => lang === 'en' ? (PRINT_EN[s] || s) : s;
   // Standard values (status, warehouse manager, warehouse, device types) also in English; names stay as typed.
-  const tv = v => lang === 'en' && v && AR_TO_EN[v] ? AR_TO_EN[v] : (v || '');
+  const tv = v => lang === 'en' && v ? (AR_TO_EN[v] || englishNameOf(v) || v) : (v || '');
   return {t, tv};
 }
 
@@ -2938,6 +2987,8 @@ function recordIqama(r) {
 function printParties(r, lang='ar') {
   const {t, tv} = printWords(lang);
   const kind = r.kind || 'engineer', out = kind !== 'engineer';
+  const partyName = rec => lang === 'en' && rec.partyEn ? rec.partyEn : rec.engineer;
+  const contactName = rec => lang === 'en' && rec.contactEn ? rec.contactEn : rec.contact;
   // The warehouse manager is on the recipients list too, with his own employee number, Iqama and phone.
   const person = name => name ? ENGINEERS.find(e => e.name === name) : null;
   const row = (label, value) => value ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #e5e5e5"><span style="font-size:11px;color:#888">${escapeHTML(t(label))}</span><span style="font-size:13px;font-weight:600;text-align:end">${escapeHTML(value)}</span></div>` : '';
@@ -2950,12 +3001,12 @@ function printParties(r, lang='ar') {
   const senderRows = sender ? [row('الوظيفة', tv(sender.job)), row('الرقم الوظيفي', sender.empid), row('رقم الإقامة / الهوية', sender.iqama), row('رقم الجوال', sender.phone)] : [];
   const recipient = person(r.engineer);
   const recipientCard = kind === 'rental'
-    ? card('المستلم — العميل (المستأجر)', r.engineer, [row('اسم المستلم لدى العميل', r.contact), row('رقم الإقامة / الهوية', r.idNumber), row('رقم الجوال', r.phone)])
+    ? card('المستلم — العميل (المستأجر)', partyName(r), [row('اسم المستلم لدى العميل', contactName(r)), row('رقم الإقامة / الهوية', r.idNumber), row('رقم الجوال', r.phone)])
     : kind === 'maintenance'
-    ? card('المستلم — جهة الصيانة أو المعايرة', r.engineer, [row('رقم الجوال', r.phone)])
+    ? card('المستلم — جهة الصيانة أو المعايرة', partyName(r), [row('رقم الجوال', r.phone)])
     : card('المستلم', tv(r.engineer), recipient || r.empid ? [row('الوظيفة', tv(recipient?.job)), row('الرقم الوظيفي', r.empid || recipient?.empid), row('رقم الإقامة / الهوية', recordIqama(r) || recipient?.iqama), row('رقم الجوال', r.phone || recipient?.phone)] : []);
   const details = [['نوع الحركة', t({engineer:'مهندس / المستودع', rental:'تأجير لعميل', maintenance:'صيانة أو معايرة خارجية'}[kind])],
-    ['الحالة', tv(r.status)], ['موقع العمل', tv(r.location)], ['المهندس المرافق', out ? r.escort : ''], ['المرجع', out ? r.ref : '']].filter(([,v]) => v);
+    ['الحالة', tv(r.status)], ['موقع العمل', tv(r.location)], ['المهندس المرافق', out ? tv(r.escort) : ''], ['المرجع', out ? r.ref : '']].filter(([,v]) => v);
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
       ${card('المُسلِّم', tv(deliveredBy) || '—', senderRows)}
       ${recipientCard}
@@ -2969,7 +3020,7 @@ function printParties(r, lang='ar') {
 function printFileName(r, lang='ar') {
   const {t, tv} = printWords(lang);
   const title = t({engineer:'نموذج استلام وتسليم جهاز', rental:'نموذج تأجير جهاز', maintenance:'نموذج إرسال جهاز للصيانة / المعايرة'}[r.kind || 'engineer']);
-  return [r.id || t('مسودة'), title, tv(r.engineer)].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, '-');
+  return [r.id || t('مسودة'), title, (lang === 'en' && r.partyEn) || tv(r.engineer)].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, '-');
 }
 
 function buildPrintHTML(r, lang='ar') {
@@ -2982,7 +3033,9 @@ function buildPrintHTML(r, lang='ar') {
     rental: {title:'نموذج تأجير جهاز', to:'العميل (المستأجر)', sign:'توقيع المستلم لدى العميل'},
     maintenance: {title:'نموذج إرسال جهاز للصيانة / المعايرة', to:'جهة الصيانة أو المعايرة', sign:'توقيع مندوب الجهة'}
   }[kind];
-  const signer = kind === 'rental' ? (r.contact || r.engineer) : tv(r.engineer);
+  const en = lang === 'en';
+  const signer = kind === 'rental' ? ((en && r.contactEn) || r.contact || (en && r.partyEn) || r.engineer)
+    : kind === 'maintenance' ? ((en && r.partyEn) || r.engineer) : tv(r.engineer);
   const signerIqama = kind === 'maintenance' ? '' : recordIqama(r);
   const signerNote = signerIqama ? ` — ${t('إقامة / هوية')}: ${signerIqama}` : '';
   const label = s => `<div style="font-size:10px;color:#999">${escapeHTML(t(s))}</div>`;
@@ -3078,6 +3131,8 @@ function openPrintPreview() {
     engineer: eng,
     kind,
     contact: out ? val('f-contact') : '',
+    partyEn: out ? val('f-party-en') : '',
+    contactEn: out ? val('f-contact-en') : '',
     idNumber: out ? val('f-idno') : val('f-iqama'),
     phone: out ? val('f-party-phone') : val('f-phone'),
     ref: out ? val('f-ref') : '',
@@ -3311,6 +3366,7 @@ function openEngModal(idx) {
     const e = ENGINEERS[engEditIdx];
     title.textContent = 'تعديل بيانات: ' + e.name;
     document.getElementById('em-name').value = e.name;
+    document.getElementById('em-name-en').value = e.nameEn||'';
     document.getElementById('em-empid').value = e.empid||'';
     document.getElementById('em-nat').value = e.nat||'';
     document.getElementById('em-iqama').value = e.iqama||'';
@@ -3321,7 +3377,7 @@ function openEngModal(idx) {
     document.getElementById('em-sec-expiry').value = e.secIdExpiry||'';
   } else {
     title.textContent = 'إضافة مستلم جديد';
-    ['em-name','em-empid','em-nat','em-iqama','em-phone','em-job','em-iqama-expiry','em-sec-no','em-sec-expiry'].forEach(id=>document.getElementById(id).value='');
+    ['em-name','em-name-en','em-empid','em-nat','em-iqama','em-phone','em-job','em-iqama-expiry','em-sec-no','em-sec-expiry'].forEach(id=>document.getElementById(id).value='');
   }
   document.getElementById('eng-modal').classList.add('open');
 }
@@ -3339,6 +3395,7 @@ async function saveEng() {
   if(current&&current.name==='مدير المخزن (صالح)'&&!current.dbId){toast('لا يمكن تعديل مدير المخزن الافتراضي');return;}
   const payload={name,empid:document.getElementById('em-empid').value.trim(),nationality:document.getElementById('em-nat').value.trim(),
     iqama:document.getElementById('em-iqama').value.trim(),phone:document.getElementById('em-phone').value.trim(),
+    name_en:document.getElementById('em-name-en').value.trim(),
     job_title:document.getElementById('em-job').value,iqama_expiry:document.getElementById('em-iqama-expiry').value,
     sec_id_no:document.getElementById('em-sec-no').value.trim(),sec_id_expiry:document.getElementById('em-sec-expiry').value};
   // A rename is carried by the database to the devices this person holds and to the movement history.
