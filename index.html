@@ -256,7 +256,7 @@ html{scroll-behavior:smooth}
 .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .toolbar .grow{flex:1;min-width:230px}
 .toolbar input,.toolbar select{background:#fff;max-width:280px}
-.cal-date{direction:ltr;text-align:right;white-space:nowrap}
+.cal-date{white-space:nowrap}
 .cert-link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:11px;font-weight:700;text-decoration:none}
 .cert-link:hover{text-decoration:underline}
 .empty-state{text-align:center;padding:38px 18px;color:var(--muted)}
@@ -289,7 +289,16 @@ html{scroll-behavior:smooth}
   .nav-tab{min-height:44px;display:flex;align-items:center}
   .btn,.btn-edit,.btn-del,.btn-prnt,.btn-save,.btn-ghost,.btn-danger,.cert-link{min-height:40px;font-size:13px}
   .badge,.dev-tag,.kpi-hint,.alert-sub,.alert-days,.section-subtitle,.row-num,.cert-link{font-size:12px!important}
-  /* Movement log and device list: one card per row, each line with its column title. */
+  .dashboard-head{align-items:flex-start;flex-direction:column}
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi-card{padding:14px}
+  .kpi-value{font-size:25px}
+  .fg,.fg.g3{grid-template-columns:1fr}
+  .quick-actions{grid-template-columns:1fr}
+  .toolbar>*{max-width:none!important;width:100%}
+}
+/* Tables become one card per row on narrow screens (phones, tablets, narrow windows). */
+@media(max-width:760px){
   table.cards-on-phone{min-width:0!important;font-size:14px}
   .cards-on-phone thead{display:none}
   .cards-on-phone,.cards-on-phone tbody,.cards-on-phone tr,.cards-on-phone td{display:block;width:100%}
@@ -303,13 +312,6 @@ html{scroll-behavior:smooth}
   .cards-on-phone td.no-print>div{flex:1;gap:8px!important}
   .cards-on-phone td.no-print button{flex:1;justify-content:center}
   .cards-on-phone .devices-cell{display:flex;flex-wrap:wrap;gap:4px}
-  .dashboard-head{align-items:flex-start;flex-direction:column}
-  .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
-  .kpi-card{padding:14px}
-  .kpi-value{font-size:25px}
-  .fg,.fg.g3{grid-template-columns:1fr}
-  .quick-actions{grid-template-columns:1fr}
-  .toolbar>*{max-width:none!important;width:100%}
 }
 </style>
 </head>
@@ -638,7 +640,7 @@ html{scroll-behavior:smooth}
   <div class="card">
     <div class="card-header">📦 المخزون — الحالة الراهنة</div>
     <div class="card-body" style="padding:0;overflow-x:auto">
-      <table class="inv-table" id="inv-table">
+      <table class="inv-table cards-on-phone" id="inv-table">
         <thead>
           <tr>
             <th>رقم الجهاز</th><th>اسم الجهاز</th><th>النوع</th>
@@ -674,7 +676,7 @@ html{scroll-behavior:smooth}
       </div>
       <div class="viewer-note"><span>🔒</span><span><strong>صلاحيتك الحالية: مشاهدة فقط.</strong><br>لتعديل الأجهزة أو بيانات المعايرة يجب أن يكون دورك «مدير» أو «أمين مخزن».</span></div>
       <div style="overflow-x:auto">
-        <table class="inv-table" style="min-width:980px">
+        <table class="inv-table cards-on-phone" id="calibration-table" style="min-width:980px">
           <thead><tr>
             <th>رقم الجهاز</th><th>الجهاز</th><th>الرقم التسلسلي</th><th>آخر معايرة</th>
             <th>تاريخ الانتهاء</th><th>الحالة</th><th>المعمل / المورد</th><th>الشهادة</th><th class="no-print">إجراء</th>
@@ -847,7 +849,7 @@ html{scroll-behavior:smooth}
         </select>
       </div>
       <div style="overflow-x:auto">
-        <table class="inv-table" id="eng-table">
+        <table class="inv-table cards-on-phone" id="eng-table">
           <thead>
             <tr>
               <th>الاسم</th><th>الرقم الوظيفي</th><th>الجنسية</th>
@@ -1646,7 +1648,7 @@ function setLanguage(language){
   if(typeof renderDevicesMgmt==='function')renderDevicesMgmt();
   if(typeof renderLog==='function')renderLog();
   translateDom(document.body);
-  ['log-table','devices-mgmt-table'].forEach(id=>labelTableCells(document.getElementById(id)));
+  ['log-table','devices-mgmt-table','calibration-table','eng-table','inv-table'].forEach(id=>labelTableCells(document.getElementById(id)));
 }
 
 // Phone cards: each cell shows its column title (from the table head, in the current language).
@@ -2167,9 +2169,9 @@ function calibrationBadge(device) {
 }
 
 function formatDate(value) {
+  // Same dd/mm/yyyy with Western digits as every other date on the page.
   if(!value) return '—';
-  const date = new Date(value + 'T12:00:00');
-  return Number.isNaN(date.getTime()) ? escapeHTML(value) : date.toLocaleDateString(uiLocale(),{year:'numeric',month:'2-digit',day:'2-digit'});
+  return escapeHTML(formatStoredDate(value));
 }
 
 function safeCertificateLink(device) {
@@ -2309,12 +2311,13 @@ function renderCalibration() {
   }
   tbody.innerHTML = rows.map(d=>{
     const idx = INVENTORY.indexOf(d);
-    return `<tr><td style="font-weight:700">${escapeHTML(d.id)}</td><td>${escapeHTML(d.name)}</td>
+    return `<tr><td style="font-weight:700;white-space:nowrap">${escapeHTML(d.id)}</td><td>${escapeHTML(d.name)}</td>
       <td>${escapeHTML(d.serial||'—')}</td><td class="cal-date">${formatDate(d.calibrationDate)}</td>
       <td class="cal-date">${formatDate(d.calibrationExpiry)}</td><td>${calibrationBadge(d)}</td>
       <td>${escapeHTML(d.calibrationLab||'—')}</td><td>${safeCertificateLink(d)}</td>
       <td class="no-print"><button class="btn-edit" onclick="openDeviceModal(${idx})">تحديث</button></td></tr>`;
   }).join('');
+  labelTableCells(document.getElementById('calibration-table'));
 }
 
 function exportCalibration() {
@@ -3180,6 +3183,7 @@ function renderInventory() {
     <td>${escapeHTML(d.location)}</td>
     <td>${calibrationBadge(d)}</td>
   </tr>`).join('');
+  labelTableCells(document.getElementById('inv-table'));
 }
 
 // ── Export Excel ───────────────────────────────────────────────
@@ -3326,6 +3330,7 @@ function renderEngTable() {
       </div>
     </td>
   </tr>`;}).join('') || `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">${escapeHTML(translateRuntimeText('لا يوجد مستلمون مطابقون'))}</td></tr>`;
+  labelTableCells(document.getElementById('eng-table'));
 }
 
 // "Renewed": new expiry date (suggested one year after the current one).
