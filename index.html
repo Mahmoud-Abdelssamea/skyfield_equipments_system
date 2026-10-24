@@ -3589,7 +3589,8 @@ async function doLogin() {
 // The password-reset email opens the page with "#...type=recovery" (or "#error=..." when the link has expired).
 // Read it before the Supabase client signs in from the link and clears the address.
 const AUTH_LINK=new URLSearchParams(location.hash.replace(/^#/,''));
-let PASSWORD_RECOVERY=AUTH_LINK.get('type')==='recovery';
+// An invitation link (new user added from the Supabase dashboard) also has to choose a password first.
+let PASSWORD_RECOVERY=['recovery','invite'].includes(AUTH_LINK.get('type'));
 document.getElementById('login-logo').src=document.querySelector('.app-header img')?.src||'';
 
 function showLoginPanel(name,message=''){
