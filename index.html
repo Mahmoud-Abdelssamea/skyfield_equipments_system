@@ -4043,5 +4043,15 @@ applyLanguage();
 languageObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
 init();
 </script>
+<script>
+// Moved to the main site (Equipment & Custody) on 2026-10-26; this copy is read-only. Shown only at the old address.
+if(location.pathname.indexOf('skyfield_equipments_system')>=0){document.addEventListener('DOMContentLoaded',function(){
+  var b=document.createElement('div');b.className='no-print';b.setAttribute('data-no-translate','');
+  b.style.cssText='position:sticky;top:0;z-index:600;background:#F47B20;color:#fff;padding:10px 16px;text-align:center;font-weight:700;font-size:14px;line-height:1.7';
+  b.innerHTML='تم نقل نظام الأجهزة إلى الموقع الرئيسي — قسم «الأجهزة والعُهد». هذه النسخة للعرض فقط.<br>The equipment system moved to the main site (Equipment &amp; Custody). This copy is read-only. '
+    +'<a href="../skyfield-quotation/index.html#devices" style="color:#fff;text-decoration:underline;margin-inline-start:8px">فتح الموقع الرئيسي / Open the main site</a>';
+  document.body.prepend(b);
+});}
+</script>
 </body>
 </html>
